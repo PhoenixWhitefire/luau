@@ -17,14 +17,11 @@ using namespace Luau::TypePath;
 
 LUAU_FASTFLAG(LuauSolverV2);
 LUAU_DYNAMIC_FASTINT(LuauTypePathMaximumTraverseSteps);
-
-LUAU_FASTFLAG(LuauReturnMappedGenericPacksFromSubtyping3);
-LUAU_FASTFLAG(LuauSubtypingGenericPacksDoesntUseVariance)
+LUAU_FASTFLAG(LuauAnalysisUsesSolverMode)
 
 struct TypePathFixture : Fixture
 {
     ScopedFastFlag sff1{FFlag::LuauSolverV2, true};
-    ScopedFastFlag sff2{FFlag::LuauSubtypingGenericPacksDoesntUseVariance, true};
     TypeArena arena;
     const DenseHashMap<TypePackId, TypePackId> emptyMap_DEPRECATED{nullptr};
 };
@@ -32,7 +29,6 @@ struct TypePathFixture : Fixture
 struct TypePathBuiltinsFixture : BuiltinsFixture
 {
     ScopedFastFlag sff1{FFlag::LuauSolverV2, true};
-    ScopedFastFlag sff2{FFlag::LuauSubtypingGenericPacksDoesntUseVariance, true};
     TypeArena arena;
     const DenseHashMap<TypePackId, TypePackId> emptyMap_DEPRECATED{nullptr};
 };
@@ -131,7 +127,6 @@ TEST_CASE_FIXTURE(TypePathFixture, "table_property")
 
 TEST_CASE_FIXTURE(ExternTypeFixture, "class_property")
 {
-    ScopedFastFlag sff{FFlag::LuauSubtypingGenericPacksDoesntUseVariance, true};
     // Force this here because vector2InstanceType won't get initialized until the frontend has been forced
     getFrontend();
     TypeArena arena;
@@ -231,8 +226,6 @@ TEST_CASE_FIXTURE(TypePathFixture, "index")
 
 TEST_CASE_FIXTURE(ExternTypeFixture, "metatables")
 {
-    ScopedFastFlag sff{FFlag::LuauSubtypingGenericPacksDoesntUseVariance, true};
-
     getFrontend();
     TypeArena arena;
 
@@ -470,8 +463,6 @@ TEST_CASE_FIXTURE(TypePathFixture, "tail")
 
 TEST_CASE_FIXTURE(TypePathFixture, "pack_slice_has_tail")
 {
-    ScopedFastFlag _{FFlag::LuauReturnMappedGenericPacksFromSubtyping3, true};
-
     TypeArena& arena = getFrontend().globals.globalTypes;
     unfreeze(arena);
 
@@ -487,8 +478,6 @@ TEST_CASE_FIXTURE(TypePathFixture, "pack_slice_has_tail")
 
 TEST_CASE_FIXTURE(TypePathFixture, "pack_slice_finite_pack")
 {
-    ScopedFastFlag _{FFlag::LuauReturnMappedGenericPacksFromSubtyping3, true};
-
     TypeArena& arena = getFrontend().globals.globalTypes;
     unfreeze(arena);
 
@@ -599,9 +588,8 @@ TEST_SUITE_BEGIN("TypePathToString");
 
 TEST_CASE("field")
 {
-    DOES_NOT_PASS_NEW_SOLVER_GUARD();
-
-    CHECK(toString(PathBuilder().prop("foo").build()) == R"(["foo"])");
+    ScopedFastFlag sff{FFlag::LuauAnalysisUsesSolverMode, true};
+    CHECK(toString(PathBuilder().prop("foo").build()) == R"([read "foo"])");
 }
 
 TEST_CASE("index")

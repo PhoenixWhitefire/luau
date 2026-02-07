@@ -10,7 +10,8 @@
 
 #include <algorithm>
 
-LUAU_FASTFLAGVARIABLE(LuauCodeGenBetterBytecodeAnalysis)
+LUAU_FASTFLAG(LuauCodegenSetBlockEntryState2)
+LUAU_FASTFLAG(LuauCodegenLinearNonNumComp)
 
 namespace Luau
 {
@@ -108,6 +109,10 @@ void loadBytecodeTypeInfo(IrFunction& function)
             info.endpc = info.startpc + readVarInt(data, offset);
         }
     }
+
+    // Preserve original information
+    if (FFlag::LuauCodegenSetBlockEntryState2)
+        function.bcOriginalTypeInfo = function.bcTypeInfo;
 
     CODEGEN_ASSERT(offset == size_t(proto->sizetypeinfo));
 }
@@ -562,12 +567,24 @@ static void applyBuiltinCall(LuauBuiltinFunction bfid, BytecodeTypes& types)
         types.b = LBC_TYPE_NUMBER;
         types.c = LBC_TYPE_NUMBER;
         break;
+    case LBF_MATH_ISNAN:
+        types.result = LBC_TYPE_BOOLEAN;
+        types.a = LBC_TYPE_NUMBER;
+        break;
+    case LBF_MATH_ISINF:
+        types.result = LBC_TYPE_BOOLEAN;
+        types.a = LBC_TYPE_NUMBER;
+        break;
+    case LBF_MATH_ISFINITE:
+        types.result = LBC_TYPE_BOOLEAN;
+        types.a = LBC_TYPE_NUMBER;
+        break;
     }
 }
 
 static HostMetamethod opcodeToHostMetamethod(LuauOpcode op)
 {
-    switch (op)
+    switch (int(op))
     {
     case LOP_ADD:
         return HostMetamethod::Add;
@@ -774,26 +791,16 @@ void analyzeBytecodeTypes(IrFunction& function, const HostIrHooks& hostHooks)
             }
             case LOP_GETTABLE:
             {
-                if (FFlag::LuauCodeGenBetterBytecodeAnalysis)
-                {
-                    int ra = LUAU_INSN_A(*pc);
-                    int rb = LUAU_INSN_B(*pc);
-                    int rc = LUAU_INSN_C(*pc);
+                int ra = LUAU_INSN_A(*pc);
+                int rb = LUAU_INSN_B(*pc);
+                int rc = LUAU_INSN_C(*pc);
 
-                    regTags[ra] = LBC_TYPE_ANY;
+                regTags[ra] = LBC_TYPE_ANY;
 
-                    bcType.a = regTags[rb];
-                    bcType.b = regTags[rc];
+                bcType.a = regTags[rb];
+                bcType.b = regTags[rc];
 
-                    bcType.result = regTags[ra];
-                }
-                else
-                {
-                    int rb = LUAU_INSN_B(*pc);
-                    int rc = LUAU_INSN_C(*pc);
-                    bcType.a = regTags[rb];
-                    bcType.b = regTags[rc];
-                }
+                bcType.result = regTags[ra];
                 break;
             }
             case LOP_SETTABLE:
@@ -851,25 +858,15 @@ void analyzeBytecodeTypes(IrFunction& function, const HostIrHooks& hostHooks)
             }
             case LOP_GETTABLEN:
             {
-                if (FFlag::LuauCodeGenBetterBytecodeAnalysis)
-                {
-                    int ra = LUAU_INSN_A(*pc);
-                    int rb = LUAU_INSN_B(*pc);
+                int ra = LUAU_INSN_A(*pc);
+                int rb = LUAU_INSN_B(*pc);
 
-                    regTags[ra] = LBC_TYPE_ANY;
+                regTags[ra] = LBC_TYPE_ANY;
 
-                    bcType.a = regTags[rb];
-                    bcType.b = LBC_TYPE_NUMBER;
+                bcType.a = regTags[rb];
+                bcType.b = LBC_TYPE_NUMBER;
 
-                    bcType.result = regTags[ra];
-                }
-                else
-                {
-                    int rb = LUAU_INSN_B(*pc);
-                    bcType.a = regTags[rb];
-                    bcType.b = LBC_TYPE_NUMBER;
-                    break;
-                }
+                bcType.result = regTags[ra];
                 break;
             }
             case LOP_SETTABLEN:
@@ -1157,11 +1154,8 @@ void analyzeBytecodeTypes(IrFunction& function, const HostIrHooks& hostHooks)
 
                 refineRegType(bcTypeInfo, ra, i, bcType.result);
 
-                if (FFlag::LuauCodeGenBetterBytecodeAnalysis)
-                {
-                    // Fastcall failure fallback is skipped from result propagation
-                    i += skip;
-                }
+                // Fastcall failure fallback is skipped from result propagation
+                i += skip;
                 break;
             }
             case LOP_FASTCALL1:
@@ -1181,11 +1175,8 @@ void analyzeBytecodeTypes(IrFunction& function, const HostIrHooks& hostHooks)
 
                 refineRegType(bcTypeInfo, ra, i, bcType.result);
 
-                if (FFlag::LuauCodeGenBetterBytecodeAnalysis)
-                {
-                    // Fastcall failure fallback is skipped from result propagation
-                    i += skip;
-                }
+                // Fastcall failure fallback is skipped from result propagation
+                i += skip;
                 break;
             }
             case LOP_FASTCALL2:
@@ -1205,11 +1196,8 @@ void analyzeBytecodeTypes(IrFunction& function, const HostIrHooks& hostHooks)
 
                 refineRegType(bcTypeInfo, ra, i, bcType.result);
 
-                if (FFlag::LuauCodeGenBetterBytecodeAnalysis)
-                {
-                    // Fastcall failure fallback is skipped from result propagation
-                    i += skip;
-                }
+                // Fastcall failure fallback is skipped from result propagation
+                i += skip;
                 break;
             }
             case LOP_FASTCALL3:
@@ -1231,11 +1219,8 @@ void analyzeBytecodeTypes(IrFunction& function, const HostIrHooks& hostHooks)
 
                 refineRegType(bcTypeInfo, ra, i, bcType.result);
 
-                if (FFlag::LuauCodeGenBetterBytecodeAnalysis)
-                {
-                    // Fastcall failure fallback is skipped from result propagation
-                    i += skip;
-                }
+                // Fastcall failure fallback is skipped from result propagation
+                i += skip;
                 break;
             }
             case LOP_FORNPREP:
@@ -1347,13 +1332,10 @@ void analyzeBytecodeTypes(IrFunction& function, const HostIrHooks& hostHooks)
             }
             case LOP_GETGLOBAL:
             {
-                if (FFlag::LuauCodeGenBetterBytecodeAnalysis)
-                {
-                    int ra = LUAU_INSN_A(*pc);
+                int ra = LUAU_INSN_A(*pc);
 
-                    regTags[ra] = LBC_TYPE_ANY;
-                    bcType.result = regTags[ra];
-                }
+                regTags[ra] = LBC_TYPE_ANY;
+                bcType.result = regTags[ra];
                 break;
             }
             case LOP_SETGLOBAL:
@@ -1362,12 +1344,25 @@ void analyzeBytecodeTypes(IrFunction& function, const HostIrHooks& hostHooks)
             case LOP_JUMPBACK:
             case LOP_JUMPIF:
             case LOP_JUMPIFNOT:
+                break;
             case LOP_JUMPIFEQ:
             case LOP_JUMPIFLE:
             case LOP_JUMPIFLT:
             case LOP_JUMPIFNOTEQ:
             case LOP_JUMPIFNOTLE:
             case LOP_JUMPIFNOTLT:
+            {
+                if (FFlag::LuauCodegenLinearNonNumComp)
+                {
+                    int ra = LUAU_INSN_A(*pc);
+                    int rb = pc[1];
+
+                    bcType.a = regTags[ra];
+                    bcType.b = regTags[rb];
+                }
+
+                break;
+            }
             case LOP_JUMPX:
             case LOP_JUMPXEQKNIL:
             case LOP_JUMPXEQKB:
@@ -1382,48 +1377,39 @@ void analyzeBytecodeTypes(IrFunction& function, const HostIrHooks& hostHooks)
             case LOP_AND:
             case LOP_OR:
             {
-                if (FFlag::LuauCodeGenBetterBytecodeAnalysis)
-                {
-                    int ra = LUAU_INSN_A(*pc);
-                    int rb = LUAU_INSN_B(*pc);
-                    int rc = LUAU_INSN_C(*pc);
+                int ra = LUAU_INSN_A(*pc);
+                int rb = LUAU_INSN_B(*pc);
+                int rc = LUAU_INSN_C(*pc);
 
-                    bcType.a = regTags[rb];
-                    bcType.b = regTags[rc];
+                bcType.a = regTags[rb];
+                bcType.b = regTags[rc];
 
-                    regTags[ra] = LBC_TYPE_ANY;
-                    bcType.result = regTags[ra];
-                }
+                regTags[ra] = LBC_TYPE_ANY;
+                bcType.result = regTags[ra];
                 break;
             }
             case LOP_ANDK:
             case LOP_ORK:
             {
-                if (FFlag::LuauCodeGenBetterBytecodeAnalysis)
-                {
-                    int ra = LUAU_INSN_A(*pc);
-                    int rb = LUAU_INSN_B(*pc);
-                    int kc = LUAU_INSN_C(*pc);
+                int ra = LUAU_INSN_A(*pc);
+                int rb = LUAU_INSN_B(*pc);
+                int kc = LUAU_INSN_C(*pc);
 
-                    bcType.a = regTags[rb];
-                    bcType.b = getBytecodeConstantTag(proto, kc);
+                bcType.a = regTags[rb];
+                bcType.b = getBytecodeConstantTag(proto, kc);
 
-                    regTags[ra] = LBC_TYPE_ANY;
-                    bcType.result = regTags[ra];
-                }
+                regTags[ra] = LBC_TYPE_ANY;
+                bcType.result = regTags[ra];
                 break;
             }
             case LOP_COVERAGE:
                 break;
             case LOP_GETIMPORT:
             {
-                if (FFlag::LuauCodeGenBetterBytecodeAnalysis)
-                {
-                    int ra = LUAU_INSN_A(*pc);
+                int ra = LUAU_INSN_A(*pc);
 
-                    regTags[ra] = LBC_TYPE_ANY;
-                    bcType.result = regTags[ra];
-                }
+                regTags[ra] = LBC_TYPE_ANY;
+                bcType.result = regTags[ra];
                 break;
             }
             case LOP_CAPTURE:

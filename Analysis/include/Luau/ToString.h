@@ -47,6 +47,7 @@ struct ToStringOptions
     bool hideFunctionSelfArgument = false;        // If true, `self: X` will be omitted from the function signature if the function has self
     bool hideTableAliasExpansions = false;        // If true, all table aliases will not be expanded
     bool useQuestionMarks = true;                 // If true, use a postfix ? for options, else write them out as unions that include nil.
+    bool ignoreSyntheticName = false;             // If true, ignore synthetic names on table types.
     size_t maxTableLength = size_t(FInt::LuauTableTypeMaximumStringifierLength); // Only applied to TableTypes
     size_t maxTypeLength = size_t(FInt::LuauTypeMaximumStringifierLength);
     size_t compositeTypesSingleLineLimit = 5; // The number of type elements permitted on a single line when printing type unions/intersections
@@ -55,9 +56,19 @@ struct ToStringOptions
     std::vector<std::string> namedFunctionOverrideArgNames; // If present, named function argument names will be overridden
 };
 
+struct ToStringSpan
+{
+    size_t startPos;
+    size_t endPos;
+    TypeId type;
+};
+
 struct ToStringResult
 {
     std::string name;
+
+    // Records which TypeId produced each substring of the output. Only recorded for named types
+    std::vector<ToStringSpan> typeSpans;
 
     bool invalid = false;
     bool error = false;
@@ -127,6 +138,10 @@ inline std::string toStringNamedFunction(const std::string& funcName, const Func
     return toStringNamedFunction(funcName, ftv, opts);
 }
 
+// Converts the given number index into a human-readable string for that index to be used in errors.
+// e.g. the index `0` becomes `1st`, `1` becomes `2nd`, `11` becomes `12th`, etc.
+std::string toHumanReadableIndex(size_t number);
+
 std::optional<std::string> getFunctionNameAsString(const AstExpr& expr);
 
 // It could be useful to see the text representation of a type during a debugging session instead of exploring the content of the class
@@ -136,6 +151,7 @@ std::string dump(const std::optional<TypeId>& ty);
 std::string dump(TypePackId ty);
 std::string dump(const std::optional<TypePackId>& ty);
 std::string dump(const std::vector<TypeId>& types);
+std::string dump(const std::vector<TypePackId>& types);
 std::string dump(DenseHashMap<TypeId, TypeId>& types);
 std::string dump(DenseHashMap<TypePackId, TypePackId>& types);
 
@@ -159,4 +175,5 @@ inline std::string toString(const TypeOrPack& tyOrTp)
 std::string dump(const TypeOrPack& tyOrTp);
 
 std::string toStringVector(const std::vector<TypeId>& types, ToStringOptions& opts);
+std::string toStringVector(const std::vector<TypePackId>& typePacks, ToStringOptions& opts);
 } // namespace Luau

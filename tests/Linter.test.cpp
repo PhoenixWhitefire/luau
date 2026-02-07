@@ -7,8 +7,9 @@
 
 #include "doctest.h"
 
-LUAU_FASTFLAG(LuauSolverV2);
-LUAU_FASTFLAG(LuauParametrizedAttributeSyntax)
+LUAU_FASTFLAG(LuauSolverV2)
+
+LUAU_FASTFLAG(LuauExplicitTypeInstantiationSyntax)
 
 using namespace Luau;
 
@@ -43,7 +44,7 @@ TEST_CASE_FIXTURE(Fixture, "UnknownGlobal")
     LintResult result = lint("--!nocheck\nreturn foo");
 
     REQUIRE(1 == result.warnings.size());
-    CHECK_EQ(result.warnings[0].text, "Unknown global 'foo'");
+    CHECK_EQ(result.warnings[0].text, "Unknown global 'foo'; consider assigning to it first");
 }
 
 TEST_CASE_FIXTURE(Fixture, "DeprecatedGlobal")
@@ -1875,8 +1876,6 @@ end
 
 TEST_CASE_FIXTURE(Fixture, "DeprecatedAttributeWithParams")
 {
-    ScopedFastFlag sff{FFlag::LuauParametrizedAttributeSyntax, true};
-
     // @deprecated works on local functions
     {
         LintResult result = lint(R"(
@@ -2546,6 +2545,21 @@ f(3)(4)
 
     CHECK_EQ(result.warnings[1].text, "native attribute on a function is redundant in a native module; consider removing it");
     CHECK_EQ(result.warnings[1].location, Location(Position(5, 4), Position(5, 11)));
+}
+
+TEST_CASE_FIXTURE(Fixture, "type_instantiation_lints")
+{
+    ScopedFastFlag sff{FFlag::LuauExplicitTypeInstantiationSyntax, true};
+
+    LintResult result = lint(R"(
+local function a<b>(cool: b)
+    print(cool)
+end
+
+a<<"hi">>("hi")
+)");
+
+    REQUIRE(0 == result.warnings.size());
 }
 
 TEST_SUITE_END();

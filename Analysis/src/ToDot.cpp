@@ -11,6 +11,7 @@
 #include <unordered_set>
 
 LUAU_FASTFLAG(LuauSolverV2)
+LUAU_FASTFLAG(LuauAnalysisUsesSolverMode)
 
 namespace Luau
 {
@@ -271,7 +272,15 @@ void StateDot::visitChildren(TypeId ty, int index)
             finishNodeLabel(ty);
             finishNode();
 
-            if (FFlag::LuauSolverV2)
+            if (FFlag::LuauAnalysisUsesSolverMode)
+            {
+                if (t.lowerBound && !get<NeverType>(t.lowerBound))
+                    visitChild(t.lowerBound, index, "[lowerBound]");
+
+                if (t.upperBound && !get<UnknownType>(t.upperBound))
+                    visitChild(t.upperBound, index, "[upperBound]");
+            }
+            else if (FFlag::LuauSolverV2)
             {
                 if (!get<NeverType>(t.lowerBound))
                     visitChild(t.lowerBound, index, "[lowerBound]");
@@ -439,7 +448,7 @@ void StateDot::visitChildren(TypePackId tp, int index)
 
         visitChild(vtp->ty, index);
     }
-    else if (const FreeTypePack* ftp = get<FreeTypePack>(tp))
+    else if (get<FreeTypePack>(tp))
     {
         formatAppend(result, "FreeTypePack %d", index);
         finishNodeLabel(tp);

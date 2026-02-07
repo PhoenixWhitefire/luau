@@ -276,8 +276,8 @@ TEST_CASE_FIXTURE(Fixture, "infer_type_of_value_a_via_typeof_with_assignment")
     }
     else
     {
-        CHECK_EQ(*getBuiltins()->numberType, *requireType("a"));
-        CHECK_EQ(*getBuiltins()->numberType, *requireType("b"));
+        CHECK("number" == toString(requireType("a")));
+        CHECK("number" == toString(requireType("b")));
 
         LUAU_REQUIRE_ERROR_COUNT(1, result);
         CHECK_EQ(
@@ -885,12 +885,13 @@ TEST_CASE_FIXTURE(Fixture, "instantiate_type_fun_should_not_trip_rbxassert")
     LUAU_REQUIRE_NO_ERRORS(result);
 }
 
-#if 0
 // This is because, after visiting all nodes in a block, we check if each type alias still points to a FreeType.
 // Doing it that way is wrong, but I also tried to make typeof(x) return a BoundType, with no luck.
 // Not important enough to fix today.
 TEST_CASE_FIXTURE(Fixture, "pulling_a_type_from_value_dont_falsely_create_occurs_check_failed")
 {
+    ScopedFastFlag _{FFlag::LuauSolverV2, true};
+
     CheckResult result = check(R"(
         function f(x)
             type T = typeof(x)
@@ -899,7 +900,6 @@ TEST_CASE_FIXTURE(Fixture, "pulling_a_type_from_value_dont_falsely_create_occurs
 
     LUAU_REQUIRE_NO_ERRORS(result);
 }
-#endif
 
 TEST_CASE_FIXTURE(Fixture, "occurs_check_on_cyclic_union_type")
 {
@@ -934,6 +934,19 @@ TEST_CASE_FIXTURE(Fixture, "instantiation_clone_has_to_follow")
     )");
 
     LUAU_REQUIRE_ERRORS(result);
+}
+
+TEST_CASE_FIXTURE(Fixture, "unifier3_supertail_covariant_with_sub")
+{
+    ScopedFastFlag _{FFlag::LuauSolverV2, true};
+
+    CheckResult result = check(R"(
+        local function fib(n)
+            return n + fib(n)
+        end
+    )");
+
+    CHECK_EQ("<a>(a) -> t1 where t1 = add<a, t1>", toString(requireType("fib")));
 }
 
 TEST_SUITE_END();

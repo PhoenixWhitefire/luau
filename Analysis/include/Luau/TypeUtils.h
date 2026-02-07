@@ -6,6 +6,7 @@
 #include "Luau/Type.h"
 #include "Luau/TypeIds.h"
 #include "Luau/TypePack.h"
+#include "Luau/VisitType.h"
 
 #include <memory>
 #include <optional>
@@ -56,14 +57,6 @@ struct InConditionalContext
 
 using ScopePtr = std::shared_ptr<struct Scope>;
 
-std::optional<Property> findTableProperty(
-    NotNull<BuiltinTypes> builtinTypes,
-    ErrorVec& errors,
-    TypeId ty,
-    const std::string& name,
-    Location location
-);
-
 std::optional<TypeId> findMetatableEntry(
     NotNull<BuiltinTypes> builtinTypes,
     ErrorVec& errors,
@@ -76,7 +69,8 @@ std::optional<TypeId> findTablePropertyRespectingMeta(
     ErrorVec& errors,
     TypeId ty,
     const std::string& name,
-    Location location
+    Location location,
+    bool useNewSolver
 );
 std::optional<TypeId> findTablePropertyRespectingMeta(
     NotNull<BuiltinTypes> builtinTypes,
@@ -84,7 +78,8 @@ std::optional<TypeId> findTablePropertyRespectingMeta(
     TypeId ty,
     const std::string& name,
     ValueContext context,
-    Location location
+    Location location,
+    bool useNewSolver
 );
 
 bool occursCheck(TypeId needle, TypeId haystack);
@@ -272,7 +267,7 @@ std::vector<TypeId> findBlockedArgTypesIn(AstExprCall* expr, NotNull<DenseHashMa
 /**
  * Given a scope and a free type, find the closest parent that has a present
  * `interiorFreeTypes` and append the given type to said list. This list will
- * be generalized when the requiste `GeneralizationConstraint` is resolved.
+ * be generalized when the requisite `GeneralizationConstraint` is resolved.
  * @param scope Initial scope this free type was attached to
  * @param ty Free type to track.
  */
@@ -388,5 +383,35 @@ private:
 TypeId addIntersection(NotNull<TypeArena> arena, NotNull<BuiltinTypes> builtinTypes, std::initializer_list<TypeId> list);
 TypeId addUnion(NotNull<TypeArena> arena, NotNull<BuiltinTypes> builtinTypes, std::initializer_list<TypeId> list);
 
+struct ContainsAnyGeneric final : public TypeOnceVisitor
+{
+    bool found = false;
+
+    explicit ContainsAnyGeneric();
+
+    bool visit(TypeId ty) override;
+    bool visit(TypePackId ty) override;
+
+    bool visit(TypeId ty, const ExternType&) override;
+
+    /**
+     * @returns if there is _any_ generic in `ty`
+     */
+    static bool hasAnyGeneric(TypeId ty);
+    static bool hasAnyGeneric(TypePackId tp);
+};
+
+/**
+ * @returns if `ty` contains a generic in the set `generics`.
+ */
+bool containsGeneric(TypeId ty, NotNull<DenseHashSet<const void*>> generics);
+bool containsGeneric(TypePackId ty, NotNull<DenseHashSet<const void*>> generics);
+
+/**
+ * @return Whether `ty` is a type that cannot be unified with another type,
+ *         such as a blocked type, pending expansion type, or an unsolved
+ *         type function.
+ */
+bool isBlocked(TypeId ty);
 
 } // namespace Luau

@@ -11,6 +11,7 @@
 
 #include "Fixture.h"
 
+#include "Luau/Error.h"
 #include "doctest.h"
 
 #include <algorithm>
@@ -23,13 +24,11 @@ LUAU_FASTINT(LuauTypeInferRecursionLimit)
 
 LUAU_FASTFLAG(LuauSolverV2)
 LUAU_FASTFLAG(LuauIceLess)
-LUAU_FASTFLAG(LuauSimplifyAnyAndUnion)
-LUAU_FASTFLAG(LuauLimitDynamicConstraintSolving3)
-LUAU_FASTFLAG(LuauDontDynamicallyCreateRedundantSubtypeConstraints)
-LUAU_FASTFLAG(LuauLimitUnification)
-LUAU_FASTFLAG(LuauSubtypingGenericsDoesntUseVariance)
-LUAU_FASTFLAG(LuauReduceSetTypeStackPressure)
-LUAU_FASTINT(LuauGenericCounterMaxDepth)
+LUAU_FASTFLAG(LuauUseNativeStackGuard)
+LUAU_FASTINT(LuauGenericCounterMaxSteps)
+LUAU_FASTFLAG(LuauUnifyWithSubtyping2)
+LUAU_FASTINT(LuauSubtypingIterationLimit)
+LUAU_FASTINT(LuauStackGuardThreshold)
 
 struct LimitFixture : BuiltinsFixture
 {
@@ -293,11 +292,7 @@ TEST_CASE_FIXTURE(LimitFixture, "typescript_port_of_Result_type")
 TEST_CASE_FIXTURE(LimitFixture, "Signal_exerpt" * doctest::timeout(1.0))
 {
     ScopedFastFlag sff[] = {
-        // These flags are required to surface the problem.
         {FFlag::LuauSolverV2, true},
-
-        // And this flag is the one that fixes it.
-        {FFlag::LuauSimplifyAnyAndUnion, true},
     };
 
     constexpr const char* src = R"LUAU(
@@ -341,10 +336,7 @@ TEST_CASE_FIXTURE(LimitFixture, "Signal_exerpt" * doctest::timeout(1.0))
 
 TEST_CASE_FIXTURE(Fixture, "limit_number_of_dynamically_created_constraints")
 {
-    ScopedFastFlag sff[] = {
-        {FFlag::LuauSolverV2, true},
-        {FFlag::LuauLimitDynamicConstraintSolving3, true},
-    };
+    ScopedFastFlag sff{FFlag::LuauSolverV2, true};
 
     constexpr const char* src = R"(
         type Array<T> = {T}
@@ -353,8 +345,9 @@ TEST_CASE_FIXTURE(Fixture, "limit_number_of_dynamically_created_constraints")
     )";
 
     {
-        ScopedFastInt sfi{FInt::LuauSolverConstraintLimit, 1};
+        ScopedFastInt sfi{FInt::LuauSolverConstraintLimit, 5};
         CheckResult result = check(src);
+        CHECK(frontend->stats.dynamicConstraintsCreated > 3);
         LUAU_CHECK_ERROR(result, CodeTooComplex);
     }
 
@@ -373,11 +366,7 @@ TEST_CASE_FIXTURE(Fixture, "limit_number_of_dynamically_created_constraints")
 
 TEST_CASE_FIXTURE(BuiltinsFixture, "limit_number_of_dynamically_created_constraints_2")
 {
-    ScopedFastFlag sff[] = {
-        {FFlag::LuauSolverV2, true},
-        {FFlag::LuauLimitDynamicConstraintSolving3, true},
-        {FFlag::LuauDontDynamicallyCreateRedundantSubtypeConstraints, true},
-    };
+    ScopedFastFlag sff[] = {{FFlag::LuauSolverV2, true}, {FFlag::LuauUnifyWithSubtyping2, false}};
 
     ScopedFastInt sfi{FInt::LuauSolverConstraintLimit, 50};
 
@@ -431,11 +420,7 @@ TEST_CASE_FIXTURE(BuiltinsFixture, "limit_number_of_dynamically_created_constrai
 
 TEST_CASE_FIXTURE(BuiltinsFixture, "subtyping_should_cache_pairs_in_seen_set" * doctest::timeout(1.0))
 {
-    ScopedFastFlag sff[] = {
-        {FFlag::LuauSolverV2, true},
-        // This flags surfaced and solves the problem. (The original PR was reverted)
-        {FFlag::LuauSubtypingGenericsDoesntUseVariance, true},
-    };
+    ScopedFastFlag sff{FFlag::LuauSolverV2, true};
 
     constexpr const char* src = R"LUAU(
     type DataProxy = any
@@ -556,12 +541,9 @@ TEST_CASE_FIXTURE(BuiltinsFixture, "subtyping_should_cache_pairs_in_seen_set" * 
 
 TEST_CASE_FIXTURE(BuiltinsFixture, "test_generic_pruning_recursion_limit")
 {
-    ScopedFastFlag sffs[] = {
-        {FFlag::LuauSolverV2, true},
-        {FFlag::LuauReduceSetTypeStackPressure, true},
-    };
+    ScopedFastFlag _{FFlag::LuauSolverV2, true};
 
-    ScopedFastInt sfi{FInt::LuauGenericCounterMaxDepth, 1};
+    ScopedFastInt sfi{FInt::LuauGenericCounterMaxSteps, 1};
 
     LUAU_REQUIRE_NO_ERRORS(check(R"(
         local function get(scale)
@@ -571,14 +553,12 @@ TEST_CASE_FIXTURE(BuiltinsFixture, "test_generic_pruning_recursion_limit")
     CHECK_EQ("<a>({ read Do: { read Re: { read Mi: a } } }) -> ()", toString(requireType("get")));
 }
 
-TEST_CASE_FIXTURE(BuiltinsFixture, "unification_runs_a_limited_number_of_iterations_before_stopping" * doctest::timeout(4.0))
+TEST_CASE_FIXTURE(BuiltinsFixture, "unification_runs_a_limited_number_of_iterations_before_stopping_unifier" * doctest::timeout(4.0))
 {
     ScopedFastFlag sff[] = {
-        // These are necessary to trigger the bug
         {FFlag::LuauSolverV2, true},
-
-        // This is the fix
-        {FFlag::LuauLimitUnification, true}
+        // Clip this entire test with this flag.
+        {FFlag::LuauUnifyWithSubtyping2, false},
     };
 
     ScopedFastInt sfi{FInt::LuauTypeInferIterationLimit, 100};
@@ -596,6 +576,132 @@ TEST_CASE_FIXTURE(BuiltinsFixture, "unification_runs_a_limited_number_of_iterati
     )");
 
     LUAU_REQUIRE_ERROR(result, UnificationTooComplex);
+}
+
+TEST_CASE_FIXTURE(BuiltinsFixture, "unification_runs_a_limited_number_of_iterations_before_stopping_subtyping" * doctest::timeout(4.0))
+{
+    ScopedFastFlag sff[] = {
+        {FFlag::LuauSolverV2, true},
+        {FFlag::LuauUnifyWithSubtyping2, true},
+    };
+
+    ScopedFastInt sfi{FInt::LuauSubtypingIterationLimit, 100};
+
+    CheckResult result = check(R"(
+        local function l0<A...>()
+            for l0=_,_ do
+            end
+        end
+
+        _ = if _._ then function(l0)
+        end elseif _._G then if `` then {n0=_,} else "luauExprConstantSt" elseif _[_][l0] then function()
+        end elseif _.n0 then if _[_] then if _ then _ else "aeld" elseif false then 0 else "lead"
+        return _.n0
+    )");
+
+    LUAU_REQUIRE_ERROR(result, NormalizationTooComplex);
+}
+
+#if defined(_MSC_VER) || defined(__APPLE__)
+
+TEST_CASE_FIXTURE(BuiltinsFixture, "native_stack_guard_prevents_stack_overflows" * doctest::timeout(4.0))
+{
+    ScopedFastFlag sff[] = {
+        {FFlag::LuauSolverV2, true},
+        {FFlag::LuauUseNativeStackGuard, true},
+    };
+
+    ScopedFastInt sffs[] = {
+        {FInt::LuauTypeInferIterationLimit, 0},
+        {FInt::LuauStackGuardThreshold, INT_MAX},
+    };
+
+    try
+    {
+        (void)check(R"(
+            local function l0<A...>()
+                for l0=_,_ do
+                end
+            end
+
+            _ = if _._ then function(l0)
+            end elseif _._G then if `` then {n0=_,} else "luauExprConstantSt" elseif _[_][l0] then function()
+            end elseif _.n0 then if _[_] then if _ then _ else "aeld" elseif false then 0 else "lead"
+            return _.n0
+        )");
+    }
+    catch (InternalCompilerError& err)
+    {
+        // HACK: This test doesn't consistently stack overflow in the same subsystem because
+        // there is some other unrelated source of nondeterminism in the solver.
+        // For this test, it's aside from the point, so we write it to be a little bit flexible.
+        const std::string prefix = "Stack overflow in ";
+        CHECK(prefix == std::string(err.what()).substr(0, prefix.size()));
+        return;
+    }
+
+    CHECK_MESSAGE(false, "An expected InternalCompilerError was not thrown!");
+}
+
+#endif
+
+TEST_CASE_FIXTURE(BuiltinsFixture, "fusion_normalization_spin" * doctest::timeout(1.0))
+{
+    LUAU_REQUIRE_ERRORS(check(R"(
+type Task = unknown
+type Constructors = unknown
+export type Scope<Constructors = any> = {Task} & Constructors
+export type DeriveScopeConstructor = (<S>(Scope<S>) -> Scope<S>)
+    & (<S, A>(Scope<S>, A & {}) -> Scope<S & A>)
+    & (<S, A, B>(Scope<S>, A & {}, B & {}) -> Scope<S & A & B>)
+    & (<S, A, B, C>(Scope<S>, A & {}, B & {}, C & {}) -> Scope<S & A & B & C>)
+    & (<S, A, B, C, D>(Scope<S>, A & {}, B & {}, C & {}, D & {}) -> Scope<S & A & B & C & D>)
+    & (<S, A, B, C, D, E>(Scope<S>, A & {}, B & {}, C & {}, D & {}, E & {}) -> Scope<S & A & B & C & D & E>)
+    & (<S, A, B, C, D, E, F>(Scope<S>, A & {}, B & {}, C & {}, D & {}, E & {}, F & {}) -> Scope<S & A & B & C & D & E & F>)
+    & (<S, A, B, C, D, E, F, G>(Scope<S>, A & {}, B & {}, C & {}, D & {}, E & {}, F & {}, G & {}) -> Scope<S & A & B & C & D & E & F & G>)
+    & (<S, A, B, C, D, E, F, G, H>(Scope<S>, A & {}, B & {}, C & {}, D & {}, E & {}, F & {}, G & {}, H & {}) -> Scope<S & A & B & C & D & E & F & G & H>)
+    & (<S, A, B, C, D, E, F, G, H, I>(Scope<S>, A & {}, B & {}, C & {}, D & {}, E & {}, F & {}, G & {}, H & {}, I & {}) -> Scope<S & A & B & C & D & E & F & G & H & I>)
+    & (<S, A, B, C, D, E, F, G, H, I, J>(Scope<S>, A & {}, B & {}, C & {}, D & {}, E & {}, F & {}, G & {}, H & {}, I & {}, J & {}) -> Scope<S & A & B & C & D & E & F & G & H & I & J>)
+    & (<S, A, B, C, D, E, F, G, H, I, J, K>(Scope<S>, A & {}, B & {}, C & {}, D & {}, E & {}, F & {}, G & {}, H & {}, I & {}, J & {}, K & {}) -> Scope<S & A & B & C & D & E & F & G & H & I & J & K>)
+    & (<S, A, B, C, D, E, F, G, H, I, J, K, L>(Scope<S>, A & {}, B & {}, C & {}, D & {}, E & {}, F & {}, G & {}, H & {}, I & {}, J & {}, K & {}, L & {}) -> Scope<S & A & B & C & D & E & F & G & H & I & J & K & L>)
+
+local deriveScopeImpl : DeriveScopeConstructor = (nil :: any)
+
+local function innerScope<T>(
+    existing: Types.Scope<T>,
+    ...: {[unknown]: unknown}
+): any
+    local new = deriveScopeImpl(existing, ...)
+end
+
+    )"));
+}
+
+TEST_CASE_FIXTURE(BuiltinsFixture, "fuzzer_stepwise_normalization_works" * doctest::timeout(4.0))
+{
+    LUAU_REQUIRE_ERRORS(check(R"(
+        _ = if _ then {n0=# _,[_]=_,``,[function(l0,l0,l0)
+        do end
+        end]=_,setmetatable,[l0(_ + _)]=_,} else _(),_,_
+        _[_](_,_(coroutine,_,_,nil),_(0,_()),function()
+        end)
+    )"));
+}
+
+TEST_CASE_FIXTURE(BuiltinsFixture, "fuzzer_oom_unions" * doctest::timeout(4.0))
+{
+    LUAU_REQUIRE_ERRORS(check(R"(
+        local _ = true,l0
+        _ = if _ then _ else _._,if _[_] then nil elseif _ then `` else _._,...
+        _ = if _ then _ elseif _ then `` else _.n0,true,...
+        _G = if "" then _ else _.n0,_
+        _ = if _[_] then _ elseif _ then _ + n0 else _._,32804,...
+        _.readstring = _,_
+        local l0 = require(module0)
+        _ = _,l0,_
+        do end
+        _.readstring += _
+    )"));
 }
 
 TEST_SUITE_END();

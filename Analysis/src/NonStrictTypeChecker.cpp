@@ -4,27 +4,25 @@
 #include "Luau/Ast.h"
 #include "Luau/AstQuery.h"
 #include "Luau/Common.h"
-#include "Luau/Simplify.h"
-#include "Luau/Type.h"
-#include "Luau/Subtyping.h"
-#include "Luau/Normalize.h"
+#include "Luau/Def.h"
 #include "Luau/Error.h"
+#include "Luau/Normalize.h"
+#include "Luau/RecursionCounter.h"
+#include "Luau/Simplify.h"
+#include "Luau/Subtyping.h"
 #include "Luau/TimeTrace.h"
+#include "Luau/ToString.h"
+#include "Luau/Type.h"
 #include "Luau/TypeArena.h"
 #include "Luau/TypeFunction.h"
-#include "Luau/Def.h"
-#include "Luau/ToString.h"
 #include "Luau/TypeUtils.h"
 
 #include <iterator>
 
 LUAU_FASTFLAG(DebugLuauMagicTypes)
 
-LUAU_FASTFLAGVARIABLE(LuauNewNonStrictMoreUnknownSymbols)
-LUAU_FASTFLAGVARIABLE(LuauNewNonStrictNoErrorsPassingNever)
-LUAU_FASTFLAGVARIABLE(LuauNewNonStrictSuppressesDynamicRequireErrors)
-LUAU_FASTFLAG(LuauEmplaceNotPushBack)
-LUAU_FASTFLAGVARIABLE(LuauUnreducedTypeFunctionsDontTriggerWarnings)
+LUAU_FASTINTVARIABLE(LuauNonStrictTypeCheckerRecursionLimit, 300)
+LUAU_FASTFLAGVARIABLE(LuauAddRecursionCounterToNonStrictTypeChecker)
 
 namespace Luau
 {
@@ -42,10 +40,7 @@ struct StackPusher
         : stack(&stack)
         , scope(scope)
     {
-        if (FFlag::LuauEmplaceNotPushBack)
-            stack.emplace_back(scope);
-        else
-            stack.push_back(NotNull{scope});
+        stack.emplace_back(scope);
     }
 
     ~StackPusher()
@@ -165,7 +160,6 @@ private:
 struct NonStrictTypeChecker
 {
     NotNull<BuiltinTypes> builtinTypes;
-    NotNull<Simplifier> simplifier;
     NotNull<TypeFunctionRuntime> typeFunctionRuntime;
     const NotNull<InternalErrorReporter> ice;
     NotNull<TypeArena> arena;
@@ -182,7 +176,6 @@ struct NonStrictTypeChecker
     NonStrictTypeChecker(
         NotNull<TypeArena> arena,
         NotNull<BuiltinTypes> builtinTypes,
-        NotNull<Simplifier> simplifier,
         NotNull<TypeFunctionRuntime> typeFunctionRuntime,
         const NotNull<InternalErrorReporter> ice,
         NotNull<UnifierSharedState> unifierState,
@@ -191,13 +184,12 @@ struct NonStrictTypeChecker
         Module* module
     )
         : builtinTypes(builtinTypes)
-        , simplifier(simplifier)
         , typeFunctionRuntime(typeFunctionRuntime)
         , ice(ice)
         , arena(arena)
         , module(module)
         , normalizer{arena, builtinTypes, unifierState, SolverMode::New, /* cache inhabitance */ true}
-        , subtyping{builtinTypes, arena, simplifier, NotNull(&normalizer), typeFunctionRuntime, ice}
+        , subtyping{builtinTypes, arena, NotNull(&normalizer), typeFunctionRuntime, ice}
         , dfg(dfg)
         , limits(limits)
     {
@@ -242,7 +234,7 @@ struct NonStrictTypeChecker
         if (noTypeFunctionErrors.find(instance))
             return instance;
 
-        TypeFunctionContext context{arena, builtinTypes, stack.back(), simplifier, NotNull{&normalizer}, typeFunctionRuntime, ice, limits};
+        TypeFunctionContext context{arena, builtinTypes, stack.back(), NotNull{&normalizer}, typeFunctionRuntime, ice, limits};
         ErrorVec errors = reduceTypeFunctions(instance, location, NotNull{&context}, true).errors;
 
         if (errors.empty())
@@ -320,6 +312,14 @@ struct NonStrictTypeChecker
 
     NonStrictContext visit(AstStatBlock* block)
     {
+        std::optional<RecursionCounter> _rc;
+        if (FFlag::LuauAddRecursionCounterToNonStrictTypeChecker)
+        {
+            _rc.emplace(&nonStrictRecursionCount);
+            if (FInt::LuauNonStrictTypeCheckerRecursionLimit > 0 && nonStrictRecursionCount >= FInt::LuauNonStrictTypeCheckerRecursionLimit)
+                return {};
+        }
+
         auto StackPusher = pushStack(block);
         NonStrictContext ctx;
 
@@ -350,24 +350,11 @@ struct NonStrictTypeChecker
         NonStrictContext condB = visit(ifStatement->condition, ValueContext::RValue);
         NonStrictContext branchContext;
 
-        if (FFlag::LuauNewNonStrictMoreUnknownSymbols)
+        NonStrictContext thenBody = visit(ifStatement->thenbody);
+        if (ifStatement->elsebody)
         {
-            NonStrictContext thenBody = visit(ifStatement->thenbody);
-            if (ifStatement->elsebody)
-            {
-                NonStrictContext elseBody = visit(ifStatement->elsebody);
-                branchContext = NonStrictContext::conjunction(builtinTypes, arena, thenBody, elseBody);
-            }
-        }
-        else
-        {
-            // If there is no else branch, don't bother generating warnings for the then branch - we can't prove there is an error
-            if (ifStatement->elsebody)
-            {
-                NonStrictContext thenBody = visit(ifStatement->thenbody);
-                NonStrictContext elseBody = visit(ifStatement->elsebody);
-                branchContext = NonStrictContext::conjunction(builtinTypes, arena, thenBody, elseBody);
-            }
+            NonStrictContext elseBody = visit(ifStatement->elsebody);
+            branchContext = NonStrictContext::conjunction(builtinTypes, arena, thenBody, elseBody);
         }
 
         return NonStrictContext::disjunction(builtinTypes, arena, condB, branchContext);
@@ -526,6 +513,14 @@ struct NonStrictTypeChecker
 
     NonStrictContext visit(AstExpr* expr, ValueContext context)
     {
+        std::optional<RecursionCounter> _rc;
+        if (FFlag::LuauAddRecursionCounterToNonStrictTypeChecker)
+        {
+            _rc.emplace(&nonStrictRecursionCount);
+            if (FInt::LuauNonStrictTypeCheckerRecursionLimit > 0 && nonStrictRecursionCount >= FInt::LuauNonStrictTypeCheckerRecursionLimit)
+                return {};
+        }
+
         auto pusher = pushStack(expr);
         if (auto e = expr->as<AstExprGroup>())
             return visit(e, context);
@@ -564,6 +559,8 @@ struct NonStrictTypeChecker
         else if (auto e = expr->as<AstExprInterpString>())
             return visit(e);
         else if (auto e = expr->as<AstExprError>())
+            return visit(e);
+        else if (auto e = expr->as<AstExprInstantiate>())
             return visit(e);
         else
         {
@@ -624,12 +621,9 @@ struct NonStrictTypeChecker
 
     NonStrictContext visit(AstExprCall* call)
     {
-        if (FFlag::LuauNewNonStrictMoreUnknownSymbols)
-        {
-            visit(call->func, ValueContext::RValue);
-            for (auto arg : call->args)
-                visit(arg, ValueContext::RValue);
-        }
+        visit(call->func, ValueContext::RValue);
+        for (auto arg : call->args)
+            visit(arg, ValueContext::RValue);
 
         NonStrictContext fresh{};
         TypeId* originalCallTy = module->astOriginalCallTypes.find(call->func);
@@ -713,26 +707,15 @@ struct NonStrictTypeChecker
             }
 
             // Populate the context and now iterate through each of the arguments to the call to find out if we satisfy the types
+            NotNull<Scope> scope{findInnermostScope(call->location)};
             for (size_t i = 0; i < arguments.size(); i++)
             {
                 AstExpr* arg = arguments[i];
-                if (auto runTimeFailureType = willRunTimeError(arg, fresh))
+                if (auto runTimeFailureType = willRunTimeError(arg, fresh, scope))
                 {
-                    if (FFlag::LuauUnreducedTypeFunctionsDontTriggerWarnings)
-                        reportError(CheckedFunctionCallError{argTypes[i], *runTimeFailureType, functionName, i}, arg->location);
-                    else
-                    {
-                        if (FFlag::LuauNewNonStrictNoErrorsPassingNever)
-                        {
-                            if (!get<NeverType>(follow(*runTimeFailureType)))
-                                reportError(CheckedFunctionCallError{argTypes[i], *runTimeFailureType, functionName, i}, arg->location);
-                        }
-                        else
-                            reportError(CheckedFunctionCallError{argTypes[i], *runTimeFailureType, functionName, i}, arg->location);
-                    }
+                    reportError(CheckedFunctionCallError{argTypes[i], *runTimeFailureType, functionName, i}, arg->location);
                 }
             }
-
             if (arguments.size() < argTypes.size())
             {
                 // We are passing fewer arguments than we expect
@@ -770,9 +753,10 @@ struct NonStrictTypeChecker
         // TODO: should a function being used as an expression generate a context without the arguments?
         auto pusher = pushStack(exprFn);
         NonStrictContext remainder = visit(exprFn->body);
+        auto scope = pusher ? pusher->scope : NotNull{module->getModuleScope().get()};
         for (AstLocal* local : exprFn->args)
         {
-            if (std::optional<TypeId> ty = willRunTimeErrorFunctionDefinition(local, remainder))
+            if (std::optional<TypeId> ty = willRunTimeErrorFunctionDefinition(local, scope, remainder))
             {
                 const char* debugname = exprFn->debugname.value;
                 reportError(NonStrictFunctionDefinitionError{debugname ? debugname : "", local->name.value, *ty}, local->location);
@@ -781,7 +765,6 @@ struct NonStrictTypeChecker
 
             visit(local->annotation);
         }
-
         visitGenerics(exprFn->generics, exprFn->genericPacks);
 
         visit(exprFn->returnAnnotation);
@@ -794,6 +777,14 @@ struct NonStrictTypeChecker
 
     NonStrictContext visit(AstExprTable* table)
     {
+        std::optional<RecursionCounter> _rc;
+        if (FFlag::LuauAddRecursionCounterToNonStrictTypeChecker)
+        {
+            _rc.emplace(&nonStrictRecursionCount);
+            if (FInt::LuauNonStrictTypeCheckerRecursionLimit > 0 && nonStrictRecursionCount >= FInt::LuauNonStrictTypeCheckerRecursionLimit)
+                return {};
+        }
+
         for (auto [_, key, value] : table->items)
         {
             if (key)
@@ -845,6 +836,19 @@ struct NonStrictTypeChecker
             visit(expr, ValueContext::RValue);
 
         return {};
+    }
+
+    NonStrictContext visit(AstExprInstantiate* instantiate)
+    {
+        for (const AstTypeOrPack& param : instantiate->typeArguments)
+        {
+            if (param.type)
+                visit(param.type);
+            else
+                visit(param.typePack);
+        }
+
+        return visit(instantiate->expr, ValueContext::RValue);
     }
 
     void visit(AstType* ty)
@@ -1180,10 +1184,8 @@ struct NonStrictTypeChecker
         // TODO: weave in logger here?
     }
 
-    // If this fragment of the ast will run time error, return the type that causes this
-    std::optional<TypeId> willRunTimeError(AstExpr* fragment, const NonStrictContext& context)
+    std::optional<TypeId> willRunTimeError(AstExpr* fragment, const NonStrictContext& context, NotNull<Scope> scope)
     {
-        NotNull<Scope> scope{Luau::findScopeAtPosition(*module, fragment->location.end).get()};
         DefId def = dfg->getDef(fragment);
         std::vector<DefId> defs;
         collectOperands(def, &defs);
@@ -1193,7 +1195,7 @@ struct NonStrictTypeChecker
             {
 
                 TypeId actualType = lookupType(fragment);
-                if (FFlag::LuauUnreducedTypeFunctionsDontTriggerWarnings && shouldSkipRuntimeErrorTesting(actualType))
+                if (shouldSkipRuntimeErrorTesting(actualType))
                     continue;
                 SubtypingResult r = subtyping.isSubtype(actualType, *contextTy, scope);
                 if (r.normalizationTooComplex)
@@ -1206,9 +1208,8 @@ struct NonStrictTypeChecker
         return {};
     }
 
-    std::optional<TypeId> willRunTimeErrorFunctionDefinition(AstLocal* fragment, const NonStrictContext& context)
+    std::optional<TypeId> willRunTimeErrorFunctionDefinition(AstLocal* fragment, NotNull<Scope> scope, const NonStrictContext& context)
     {
-        NotNull<Scope> scope{Luau::findScopeAtPosition(*module, fragment->location.end).get()};
         DefId def = dfg->getDef(fragment);
         std::vector<DefId> defs;
         collectOperands(def, &defs);
@@ -1229,6 +1230,8 @@ struct NonStrictTypeChecker
     }
 
 private:
+    int nonStrictRecursionCount = 0;
+
     TypeId getOrCreateNegation(TypeId baseType)
     {
         TypeId& cachedResult = cachedNegations[baseType];
@@ -1246,7 +1249,6 @@ private:
 
 void checkNonStrict(
     NotNull<BuiltinTypes> builtinTypes,
-    NotNull<Simplifier> simplifier,
     NotNull<TypeFunctionRuntime> typeFunctionRuntime,
     NotNull<InternalErrorReporter> ice,
     NotNull<UnifierSharedState> unifierState,
@@ -1258,27 +1260,22 @@ void checkNonStrict(
 {
     LUAU_TIMETRACE_SCOPE("checkNonStrict", "Typechecking");
 
-    NonStrictTypeChecker typeChecker{
-        NotNull{&module->internalTypes}, builtinTypes, simplifier, typeFunctionRuntime, ice, unifierState, dfg, limits, module
-    };
+    NonStrictTypeChecker typeChecker{NotNull{&module->internalTypes}, builtinTypes, typeFunctionRuntime, ice, unifierState, dfg, limits, module};
     typeChecker.visit(sourceModule.root);
     unfreeze(module->interfaceTypes);
     copyErrors(module->errors, module->interfaceTypes, builtinTypes);
 
-    if (FFlag::LuauNewNonStrictSuppressesDynamicRequireErrors)
-    {
-        module->errors.erase(
-            std::remove_if(
-                module->errors.begin(),
-                module->errors.end(),
-                [](auto err)
-                {
-                    return get<UnknownRequire>(err) != nullptr;
-                }
-            ),
-            module->errors.end()
-        );
-    }
+    module->errors.erase(
+        std::remove_if(
+            module->errors.begin(),
+            module->errors.end(),
+            [](auto err)
+            {
+                return get<UnknownRequire>(err) != nullptr;
+            }
+        ),
+        module->errors.end()
+    );
 
     freeze(module->interfaceTypes);
 }

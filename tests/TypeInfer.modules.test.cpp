@@ -13,11 +13,11 @@
 
 LUAU_FASTFLAG(LuauInstantiateInSubtyping)
 LUAU_FASTFLAG(LuauSolverV2)
-LUAU_FASTFLAG(LuauReturnMappedGenericPacksFromSubtyping3)
 LUAU_FASTFLAG(DebugLuauMagicTypes)
-LUAU_FASTFLAG(LuauLimitDynamicConstraintSolving3)
 LUAU_FASTINT(LuauSolverConstraintLimit)
-LUAU_FASTFLAG(LuauNameConstraintRestrictRecursiveTypes)
+LUAU_FASTFLAG(LuauUnifyWithSubtyping2)
+LUAU_FASTFLAG(LuauBetterTypeMismatchErrors)
+LUAU_FASTFLAG(LuauReworkInfiniteTypeFinder)
 
 using namespace Luau;
 
@@ -262,7 +262,10 @@ a = tbl.abc.def
 
     CheckResult result = getFrontend().check("game/B");
     LUAU_REQUIRE_ERROR_COUNT(1, result);
-    CHECK_EQ("Type 'number' could not be converted into 'string'", toString(result.errors[0]));
+    if (FFlag::LuauBetterTypeMismatchErrors)
+        CHECK_EQ("Expected this to be 'string', but got 'number'", toString(result.errors[0]));
+    else
+        CHECK_EQ("Type 'number' could not be converted into 'string'", toString(result.errors[0]));
 }
 
 TEST_CASE_FIXTURE(BuiltinsFixture, "general_require_type_mismatch")
@@ -277,7 +280,10 @@ local tbl: string = require(game.A)
 
     CheckResult result = getFrontend().check("game/B");
     LUAU_REQUIRE_ERROR_COUNT(1, result);
-    CHECK_EQ("Type '{ def: number }' could not be converted into 'string'", toString(result.errors[0]));
+    if (FFlag::LuauBetterTypeMismatchErrors)
+        CHECK_EQ("Expected this to be 'string', but got '{ def: number }'", toString(result.errors[0]));
+    else
+        CHECK_EQ("Type '{ def: number }' could not be converted into 'string'", toString(result.errors[0]));
 }
 
 TEST_CASE_FIXTURE(Fixture, "bound_free_table_export_is_ok")
@@ -463,10 +469,23 @@ local b: B.T = a
 
     if (FFlag::LuauSolverV2)
     {
-        const std::string expected = "Type 'T' from 'game/A' could not be converted into 'T' from 'game/B'; \n"
-                                     "this is because accessing `x` results in `number` in the former type and `string` in the latter type, and "
-                                     "`number` is not exactly `string`";
+        const std::string expected =
+            FFlag::LuauBetterTypeMismatchErrors
+                ? "Expected this to be 'T' from 'game/B', but got 'T' from 'game/A'; \n"
+                  "accessing `x` results in `number` in the latter type and `string` in the former type, and "
+                  "`number` is not exactly `string`"
+                : "Type 'T' from 'game/A' could not be converted into 'T' from 'game/B'; \n"
+                  "this is because accessing `x` results in `number` in the former type and `string` in the latter type, and "
+                  "`number` is not exactly `string`";
         CHECK(expected == toString(result.errors[0]));
+    }
+    else if (FFlag::LuauBetterTypeMismatchErrors)
+    {
+        const std::string expected = R"(Expected this to be exactly 'T' from 'game/B', but got 'T' from 'game/A'
+caused by:
+  Property 'x' is not compatible.
+Expected this to be exactly 'string', but got 'number')";
+        CHECK_EQ(expected, toString(result.errors[0]));
     }
     else
     {
@@ -509,10 +528,23 @@ local b: B.T = a
 
     if (FFlag::LuauSolverV2)
     {
-        const std::string expected = "Type 'T' from 'game/B' could not be converted into 'T' from 'game/C'; \n"
-                                     "this is because accessing `x` results in `number` in the former type and `string` in the latter type, and "
-                                     "`number` is not exactly `string`";
+        const std::string expected =
+            FFlag::LuauBetterTypeMismatchErrors
+                ? "Expected this to be 'T' from 'game/C', but got 'T' from 'game/B'; \n"
+                  "accessing `x` results in `number` in the latter type and `string` in the former type, and "
+                  "`number` is not exactly `string`"
+                : "Type 'T' from 'game/B' could not be converted into 'T' from 'game/C'; \n"
+                  "this is because accessing `x` results in `number` in the former type and `string` in the latter type, and "
+                  "`number` is not exactly `string`";
         CHECK(expected == toString(result.errors[0]));
+    }
+    else if (FFlag::LuauBetterTypeMismatchErrors)
+    {
+        const std::string expected = R"(Expected this to be exactly 'T' from 'game/C', but got 'T' from 'game/B'
+caused by:
+  Property 'x' is not compatible.
+Expected this to be exactly 'string', but got 'number')";
+        CHECK_EQ(expected, toString(result.errors[0]));
     }
     else
     {
@@ -818,7 +850,7 @@ TEST_CASE_FIXTURE(BuiltinsFixture, "cycles_dont_make_everything_any")
 
 TEST_CASE_FIXTURE(BuiltinsFixture, "cross_module_function_mutation")
 {
-    ScopedFastFlag _[] = {{FFlag::LuauSolverV2, true}, {FFlag::LuauReturnMappedGenericPacksFromSubtyping3, true}};
+    ScopedFastFlag _{FFlag::LuauSolverV2, true};
 
     fileResolver.source["game/A"] = R"(
 function test2(a: number, b: string)
@@ -847,7 +879,6 @@ TEST_CASE_FIXTURE(BuiltinsFixture, "internal_types_are_scrubbed_from_module")
     ScopedFastFlag sffs[] = {
         {FFlag::LuauSolverV2, true},
         {FFlag::DebugLuauMagicTypes, true},
-        {FFlag::LuauLimitDynamicConstraintSolving3, true},
     };
 
     fileResolver.source["game/A"] = R"(
@@ -866,7 +897,9 @@ TEST_CASE_FIXTURE(BuiltinsFixture, "internal_type_errors_are_only_reported_once"
     ScopedFastFlag sffs[] = {
         {FFlag::LuauSolverV2, true},
         {FFlag::DebugLuauMagicTypes, true},
-        {FFlag::LuauLimitDynamicConstraintSolving3, true},
+        // With this flag on we no longer try to unify the members of the return
+        // table with `any`, so we don't end up being unable to solve constraints.
+        {FFlag::LuauUnifyWithSubtyping2, true},
     };
 
     fileResolver.source["game/A"] = R"(
@@ -874,15 +907,14 @@ return function(): { X: _luau_blocked_type, Y: _luau_blocked_type } return nil :
     )";
 
     CheckResult result = getFrontend().check("game/A");
-    LUAU_REQUIRE_ERROR_COUNT(2, result);
-    CHECK(get<ConstraintSolvingIncompleteError>(result.errors[0]));
-    CHECK(get<InternalError>(result.errors[1]));
+    LUAU_REQUIRE_ERROR_COUNT(1, result);
+    CHECK(get<InternalError>(result.errors[0]));
     CHECK("(...any) -> { X: *error-type*, Y: *error-type* }" == toString(getFrontend().moduleResolver.getModule("game/A")->returnType));
 }
 
 TEST_CASE_FIXTURE(BuiltinsFixture, "scrub_unsealed_tables")
 {
-    ScopedFastFlag sffs[] = {{FFlag::LuauSolverV2, true}, {FFlag::LuauLimitDynamicConstraintSolving3, true}};
+    ScopedFastFlag sff{FFlag::LuauSolverV2, true};
 
     ScopedFastInt sfi{FInt::LuauSolverConstraintLimit, 5};
 
@@ -912,8 +944,6 @@ TEST_CASE_FIXTURE(BuiltinsFixture, "scrub_unsealed_tables")
 
 TEST_CASE_FIXTURE(BuiltinsFixture, "invalid_local_alias_shouldnt_shadow_imported_type")
 {
-    ScopedFastFlag _{FFlag::LuauNameConstraintRestrictRecursiveTypes, true};
-
     fileResolver.source["game/A"] = R"(
         export type bad<T> = {T}
         return {}
@@ -940,7 +970,7 @@ TEST_CASE_FIXTURE(BuiltinsFixture, "invalid_local_alias_shouldnt_shadow_imported
 
 TEST_CASE_FIXTURE(BuiltinsFixture, "invalid_alias_should_export_as_error_type")
 {
-    ScopedFastFlag _{FFlag::LuauNameConstraintRestrictRecursiveTypes, true};
+    ScopedFastFlag _{FFlag::LuauReworkInfiniteTypeFinder, true};
 
     fileResolver.source["game/A"] = R"(
         export type bad<T> = {bad<{T}>}
@@ -960,10 +990,7 @@ TEST_CASE_FIXTURE(BuiltinsFixture, "invalid_alias_should_export_as_error_type")
     REQUIRE(b != nullptr);
     std::optional<TypeId> fType = requireType(b, "f");
     REQUIRE(fType);
-    if (FFlag::LuauSolverV2)
-        CHECK(toString(*fType) == "*error-type*");
-    else
-        CHECK(toString(*fType) == "bad<number>");
+    CHECK(toString(*fType) == "bad<number>");
 }
 
 TEST_SUITE_END();
