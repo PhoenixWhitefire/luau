@@ -35,6 +35,8 @@ typedef union
     void* p;
     double n;
     int b;
+    int64_t i64;
+    uint64_t u64;
     float v[2]; // v[0], v[1] live here; v[2] lives in TValue::extra
 } Value;
 
@@ -61,6 +63,8 @@ typedef struct lua_TValue
 #define ttisbuffer(o) (ttype(o) == LUA_TBUFFER)
 #define ttislightuserdata(o) (ttype(o) == LUA_TLIGHTUSERDATA)
 #define ttisvector(o) (ttype(o) == LUA_TVECTOR)
+#define ttisi64(o) (ttype(o) == LUA_TINT64)
+#define ttisu64(o) (ttype(o) == LUA_TUINT64)
 #define ttisupval(o) (ttype(o) == LUA_TUPVAL)
 
 // Macros to access values
@@ -69,6 +73,8 @@ typedef struct lua_TValue
 #define pvalue(o) check_exp(ttislightuserdata(o), (o)->value.p)
 #define nvalue(o) check_exp(ttisnumber(o), (o)->value.n)
 #define vvalue(o) check_exp(ttisvector(o), (o)->value.v)
+#define i64value(o) check_exp(ttisi64(o), (o)->value.i64)
+#define u64value(o) check_exp(ttisu64(o), (o)->value.u64)
 #define tsvalue(o) check_exp(ttisstring(o), &(o)->value.gc->ts)
 #define uvalue(o) check_exp(ttisuserdata(o), &(o)->value.gc->u)
 #define clvalue(o) check_exp(ttisfunction(o), &(o)->value.gc->cl)
@@ -124,6 +130,20 @@ typedef struct lua_TValue
         i_o->tt = LUA_TVECTOR; \
     }
 #endif
+
+#define seti64value(obj, x) \
+    { \
+        TValue* i_o = (obj); \
+        i_o->value.i64 = (x); \
+        i_o->tt = LUA_TINT64; \
+    }
+
+#define setu64value(obj, x) \
+    { \
+        TValue* i_o = (obj); \
+        i_o->value.u64 = (x); \
+        i_o->tt = LUA_TUINT64; \
+    }
 
 #define setpvalue(obj, x, tag) \
     { \

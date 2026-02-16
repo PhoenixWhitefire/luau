@@ -36,6 +36,11 @@ LUALIB_API unsigned luaL_optunsigned(lua_State* L, int numArg, unsigned def);
 LUALIB_API const float* luaL_checkvector(lua_State* L, int narg);
 LUALIB_API const float* luaL_optvector(lua_State* L, int narg, const float* def);
 
+LUALIB_API int64_t luaL_checkint64(lua_State* L, int narg);
+LUALIB_API int64_t luaL_optint64(lua_State* L, int narg, int64_t def);
+LUALIB_API uint64_t luaL_checkuint64(lua_State* L, int narg);
+LUALIB_API uint64_t luaL_optuint64(lua_State* L, int narg, uint64_t def);
+
 LUALIB_API void luaL_checkstack(lua_State* L, int sz, const char* msg);
 LUALIB_API void luaL_checktype(lua_State* L, int narg, int t);
 LUALIB_API void luaL_checkany(lua_State* L, int narg);
@@ -143,6 +148,12 @@ LUALIB_API int luaopen_debug(lua_State* L);
 
 #define LUA_VECLIBNAME "vector"
 LUALIB_API int luaopen_vector(lua_State* L);
+
+#define LUA_I64LIBNAME "int64"
+LUALIB_API int luaopen_int64(lua_State* L);
+
+#define LUA_U64LIBNAME "uint64"
+LUALIB_API int luaopen_uint64(lua_State* L);
 
 // open all builtin libraries
 LUALIB_API void luaL_openlibs(lua_State* L);

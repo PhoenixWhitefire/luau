@@ -28,6 +28,22 @@ const TValue* luaV_tonumber(const TValue* obj, TValue* n)
         return NULL;
 }
 
+static const TValue* luaV_toint64(const TValue* obj)
+{
+    if (ttisi64(obj))
+        return obj;
+
+    return nullptr;
+}
+
+static const TValue* luaV_touint64(const TValue* obj)
+{
+    if (ttisu64(obj))
+        return obj;
+
+    return nullptr;
+}
+
 int luaV_tostring(lua_State* L, StkId obj)
 {
     if (!ttisnumber(obj))
@@ -505,6 +521,59 @@ void luaV_doarithimpl(lua_State* L, StkId ra, const TValue* rb, const TValue* rc
         default:
             LUAU_ASSERT(0);
             break;
+        }
+    }
+    else if ((b = luaV_toint64(rb)) != NULL && (c = luaV_toint64(rc)) != NULL)
+    {
+        int64_t nb = i64value(b), nc = i64value(c);
+
+        switch (op)
+        {
+        case TM_ADD:
+            seti64value(ra, nb + nc);
+            break;
+        case TM_SUB:
+            seti64value(ra, nb - nc);
+            break;
+        case TM_MUL:
+            seti64value(ra, nb * nc);
+            break;
+        case TM_IDIV:
+            seti64value(ra, nb / nc);
+            break;
+        case TM_POW:
+            seti64value(ra, nb - floor(nb / nc) * nc);
+            break;
+        case TM_UNM:
+            seti64value(ra, -nb);
+            break;
+        default:
+            luaG_aritherror(L, rb, rc, op);
+        }
+    }
+    else if ((b = luaV_touint64(rb)) != NULL && (c = luaV_touint64(rc)) != NULL)
+    {
+        uint64_t nb = u64value(b), nc = u64value(c);
+
+        switch (op)
+        {
+        case TM_ADD:
+            setu64value(ra, nb + nc);
+            break;
+        case TM_SUB:
+            setu64value(ra, nb - nc);
+            break;
+        case TM_MUL:
+            setu64value(ra, nb * nc);
+            break;
+        case TM_IDIV:
+            setu64value(ra, nb / nc);
+            break;
+        case TM_POW:
+            setu64value(ra, nb - floor(nb / nc) * nc);
+            break;
+        default:
+            luaG_aritherror(L, rb, rc, op);
         }
     }
     else

@@ -10,6 +10,8 @@
 #include "lnumutils.h"
 
 #include <string.h>
+#include <inttypes.h>
+#include <cstdio>
 
 LUAU_FASTFLAG(LuauStacklessPcall)
 
@@ -253,6 +255,34 @@ const float* luaL_checkvector(lua_State* L, int narg)
 const float* luaL_optvector(lua_State* L, int narg, const float* def)
 {
     return luaL_opt(L, luaL_checkvector, narg, def);
+}
+
+int64_t luaL_checkint64(lua_State* L, int narg)
+{
+    int isnum;
+    int64_t n = lua_toint64x(L, narg, &isnum);
+    if (!isnum)
+        tag_error(L, narg, LUA_TINT64);
+    return n;
+}
+
+int64_t luaL_optint64(lua_State* L, int narg, int64_t def)
+{
+    return luaL_opt(L, luaL_checkint64, narg, def);
+}
+
+uint64_t luaL_checkuint64(lua_State* L, int narg)
+{
+    int isnum;
+    uint64_t n = lua_touint64x(L, narg, &isnum);
+    if (!isnum)
+        tag_error(L, narg, LUA_TUINT64);
+    return n;
+}
+
+uint64_t luaL_optuint64(lua_State* L, int narg, uint64_t def)
+{
+    return luaL_opt(L, luaL_checkuint64, narg, def);
 }
 
 int luaL_getmetafield(lua_State* L, int obj, const char* event)
@@ -627,6 +657,24 @@ const char* luaL_tolstring(lua_State* L, int idx, size_t* len)
         char s[LUAI_MAXNUM2STR];
         char* e = luai_num2str(s, n);
         lua_pushlstring(L, s, e - s);
+        break;
+    }
+    case LUA_TINT64:
+    {
+        int64_t i = lua_toint64(L, idx);
+
+        char s[21];
+        snprintf(s, sizeof(s), "%" PRId64, i);
+        lua_pushlstring(L, s, strlen(s));
+        break;
+    }
+    case LUA_TUINT64:
+    {
+        uint64_t u = lua_touint64(L, idx);
+
+        char s[30];
+        snprintf(s, sizeof(s), "%" PRIu64, u);
+        lua_pushlstring(L, s, strlen(s));
         break;
     }
     case LUA_TVECTOR:

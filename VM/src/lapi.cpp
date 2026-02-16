@@ -436,6 +436,40 @@ unsigned lua_tounsignedx(lua_State* L, int idx, int* isnum)
     }
 }
 
+int64_t lua_toint64x(lua_State* L, int idx, int* isnum)
+{
+    const TValue* o = index2addr(L, idx);
+    if (ttisi64(o))
+    {
+        if (isnum)
+            *isnum = 1;
+        return o->value.i64;
+    }
+    else
+    {
+        if (isnum)
+            *isnum = 0;
+        return 0;
+    }
+}
+
+uint64_t lua_touint64x(lua_State* L, int idx, int* isnum)
+{
+    const TValue* o = index2addr(L, idx);
+    if (ttisu64(o))
+    {
+        if (isnum)
+            *isnum = 1;
+        return o->value.u64;
+    }
+    else
+    {
+        if (isnum)
+            *isnum = 0;
+        return 0;
+    }
+}
+
 int lua_toboolean(lua_State* L, int idx)
 {
     const TValue* o = index2addr(L, idx);
@@ -649,6 +683,18 @@ void lua_pushinteger(lua_State* L, int n)
 void lua_pushunsigned(lua_State* L, unsigned u)
 {
     setnvalue(L->top, cast_num(u));
+    api_incr_top(L);
+}
+
+void lua_pushint64(lua_State* L, int64_t n)
+{
+    seti64value(L->top, n);
+    api_incr_top(L);
+}
+
+void lua_pushuint64(lua_State* L, uint64_t n)
+{
+    setu64value(L->top, n);
     api_incr_top(L);
 }
 
