@@ -153,6 +153,8 @@ inline bool lowerImpl(
             function.entryLocation = build.getLabelOffset(block.label);
         }
 
+        lowering.startBlock(block);
+
         IrBlock& nextBlock = getNextBlock(function, sortedBlocks, dummy, i);
 
         // Optimizations often propagate information between blocks
@@ -316,6 +318,7 @@ inline bool lowerFunction(
 )
 {
     ir.function.stats = stats;
+    ir.function.recordCounters = options.compilationOptions.recordCounters;
 
     killUnusedBlocks(ir.function);
 

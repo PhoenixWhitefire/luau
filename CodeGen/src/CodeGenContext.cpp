@@ -427,6 +427,16 @@ static size_t getMemorySize(lua_State* L, Proto* proto)
     return execDataSize + execDataHeader.nativeCodeSize;
 }
 
+static char* getCounterData(lua_State* L, Proto* proto, size_t* count)
+{
+    CODEGEN_ASSERT(count != nullptr);
+
+    const NativeProtoExecDataHeader& execDataHeader = getNativeProtoExecDataHeader(static_cast<const uint32_t*>(proto->execdata));
+
+    *count = execDataHeader.extraDataCount / 4;
+    return reinterpret_cast<char*>(static_cast<uint32_t*>(proto->execdata) + proto->sizecode);
+}
+
 static void initializeExecutionCallbacks(lua_State* L, BaseCodeGenContext* codeGenContext) noexcept
 {
     CODEGEN_ASSERT(codeGenContext != nullptr);
@@ -439,6 +449,7 @@ static void initializeExecutionCallbacks(lua_State* L, BaseCodeGenContext* codeG
     ecb->enter = onEnter;
     ecb->disable = onDisable;
     ecb->getmemorysize = getMemorySize;
+    ecb->getcounterdata = getCounterData;
 }
 
 void create(lua_State* L)
@@ -469,7 +480,9 @@ void create(lua_State* L, SharedCodeGenContext* codeGenContext)
 
 [[nodiscard]] static NativeProtoExecDataPtr createNativeProtoExecData(Proto* proto, const IrBuilder& ir)
 {
-    NativeProtoExecDataPtr nativeExecData = createNativeProtoExecData(proto->sizecode);
+    uint32_t extraDataCount = uint32_t(ir.function.extraNativeData.size());
+
+    NativeProtoExecDataPtr nativeExecData = createNativeProtoExecData(proto->sizecode, extraDataCount);
 
     uint32_t instTarget = ir.function.entryLocation;
     uint32_t unassignedOffset = ir.function.endLocation - instTarget;
@@ -486,6 +499,10 @@ void create(lua_State* L, SharedCodeGenContext* codeGenContext)
             nativeExecData[i] = unassignedOffset;
     }
 
+    // After the instruction offsets, custom native data is placed
+    for (uint32_t i = 0; i < extraDataCount; i++)
+        nativeExecData[proto->sizecode + i] = ir.function.extraNativeData[i];
+
     // Set first instruction offset to 0 so that entering this function still
     // executes any generated entry code.
     nativeExecData[0] = 0;
@@ -494,6 +511,7 @@ void create(lua_State* L, SharedCodeGenContext* codeGenContext)
     header.entryOffsetOrAddress = reinterpret_cast<const uint8_t*>(static_cast<uintptr_t>(instTarget));
     header.bytecodeId = uint32_t(proto->bytecodeid);
     header.bytecodeInstructionCount = proto->sizecode;
+    header.extraDataCount = extraDataCount;
 
     return nativeExecData;
 }
@@ -504,11 +522,11 @@ template<typename AssemblyBuilder>
     ModuleHelpers& helpers,
     Proto* proto,
     uint32_t& totalIrInstCount,
-    const HostIrHooks& hooks,
+    const CompilationOptions& options,
     CodeGenCompilationResult& result
 )
 {
-    IrBuilder ir(hooks);
+    IrBuilder ir(options.hooks);
     ir.buildFunctionIr(proto);
 
     unsigned instCount = unsigned(ir.function.instructions.size());
@@ -521,7 +539,10 @@ template<typename AssemblyBuilder>
 
     totalIrInstCount += instCount;
 
-    if (!lowerFunction(ir, build, helpers, proto, {}, /* stats */ nullptr, result))
+    AssemblyOptions assemblyOptions;
+    assemblyOptions.compilationOptions = options;
+
+    if (!lowerFunction(ir, build, helpers, proto, assemblyOptions, /* stats */ nullptr, result))
     {
         return {};
     }
@@ -608,7 +629,7 @@ template<typename AssemblyBuilder>
     {
         CodeGenCompilationResult protoResult = CodeGenCompilationResult::Success;
 
-        NativeProtoExecDataPtr nativeExecData = createNativeFunction(build, helpers, protos[i], totalIrInstCount, options.hooks, protoResult);
+        NativeProtoExecDataPtr nativeExecData = createNativeFunction(build, helpers, protos[i], totalIrInstCount, options, protoResult);
         if (nativeExecData != nullptr)
         {
             nativeProtos.push_back(std::move(nativeExecData));

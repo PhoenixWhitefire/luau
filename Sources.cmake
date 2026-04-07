@@ -6,6 +6,7 @@ target_sources(Luau.Common PRIVATE
     Common/include/Luau/DenseHash.h
     Common/include/Luau/ExperimentalFlags.h
     Common/include/Luau/HashUtil.h
+    Common/include/Luau/InsertionOrderedMap.h
     Common/include/Luau/SmallVector.h
     Common/include/Luau/StringUtils.h
     Common/include/Luau/TimeTrace.h
@@ -202,8 +203,6 @@ target_sources(Luau.Analysis PRIVATE
     Analysis/include/Luau/Frontend.h
     Analysis/include/Luau/Generalization.h
     Analysis/include/Luau/GlobalTypes.h
-    Analysis/include/Luau/InferPolarity.h
-    Analysis/include/Luau/InsertionOrderedMap.h
     Analysis/include/Luau/Instantiation.h
     Analysis/include/Luau/Instantiation2.h
     Analysis/include/Luau/IostreamHelpers.h
@@ -244,6 +243,7 @@ target_sources(Luau.Analysis PRIVATE
     Analysis/include/Luau/TypeCheckLimits.h
     Analysis/include/Luau/TypedAllocator.h
     Analysis/include/Luau/TypeFunction.h
+    Analysis/include/Luau/TypeFunctionError.h
     Analysis/include/Luau/TypeFunctionReductionGuesser.h
     Analysis/include/Luau/TypeFunctionRuntime.h
     Analysis/include/Luau/TypeFunctionRuntimeBuilder.h
@@ -289,7 +289,6 @@ target_sources(Luau.Analysis PRIVATE
     Analysis/src/Generalization.cpp
     Analysis/src/NativeStackGuard.cpp
     Analysis/src/GlobalTypes.cpp
-    Analysis/src/InferPolarity.cpp
     Analysis/src/Instantiation.cpp
     Analysis/src/Instantiation2.cpp
     Analysis/src/IostreamHelpers.cpp
@@ -324,6 +323,7 @@ target_sources(Luau.Analysis PRIVATE
     Analysis/src/TypeChecker2.cpp
     Analysis/src/TypedAllocator.cpp
     Analysis/src/TypeFunction.cpp
+    Analysis/src/TypeFunctionError.cpp
     Analysis/src/TypeFunctionReductionGuesser.cpp
     Analysis/src/TypeFunctionRuntime.cpp
     Analysis/src/TypeFunctionRuntimeBuilder.cpp
@@ -375,6 +375,7 @@ target_sources(Luau.VM PRIVATE
     VM/src/ludata.cpp
     VM/src/lutf8lib.cpp
     VM/src/lveclib.cpp
+    VM/src/lintlib.cpp
     VM/src/lvmexecute.cpp
     VM/src/lvmload.cpp
     VM/src/lvmutils.cpp
@@ -418,10 +419,12 @@ target_sources(Luau.CLI.lib PRIVATE
 if(TARGET Luau.Repl.CLI)
     # Luau.Repl.CLI Sources
     target_sources(Luau.Repl.CLI PRIVATE
+        CLI/include/Luau/Counters.h
         CLI/include/Luau/Coverage.h
         CLI/include/Luau/Profiler.h
         CLI/include/Luau/ReplRequirer.h
 
+        CLI/src/Counters.cpp
         CLI/src/Coverage.cpp
         CLI/src/Profiler.cpp
         CLI/src/Repl.cpp
@@ -476,7 +479,6 @@ if(TARGET Luau.UnitTest)
         tests/FragmentAutocomplete.test.cpp
         tests/Frontend.test.cpp
         tests/Generalization.test.cpp
-        tests/InferPolarity.test.cpp
         tests/InsertionOrderedMap.test.cpp
         tests/IostreamOptional.h
         tests/IrBuilder.test.cpp
@@ -562,10 +564,12 @@ endif()
 if(TARGET Luau.CLI.Test)
     # Luau.CLI.Test Sources
     target_sources(Luau.CLI.Test PRIVATE
+        CLI/include/Luau/Counters.h
         CLI/include/Luau/Coverage.h
         CLI/include/Luau/Profiler.h
         CLI/include/Luau/ReplRequirer.h
 
+        CLI/src/Counters.cpp
         CLI/src/Coverage.cpp
         CLI/src/Profiler.cpp
         CLI/src/Repl.cpp

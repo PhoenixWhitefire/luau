@@ -10,10 +10,12 @@
 #include "lobject.h"
 
 LUAU_FASTFLAGVARIABLE(LuauCodegenGcoDse2)
-LUAU_FASTFLAG(LuauCodegenBufferRangeMerge3)
+LUAU_FASTFLAG(LuauCodegenBufferRangeMerge4)
 LUAU_FASTFLAGVARIABLE(LuauCodegenDsoPairTrackFix)
 LUAU_FASTFLAGVARIABLE(LuauCodegenDsoTagOverlayFix)
-LUAU_FASTFLAG(LuauCodegenOpReadOnly)
+LUAU_FASTFLAGVARIABLE(LuauCodegenMarkDeadRegisters2)
+LUAU_FASTFLAGVARIABLE(LuauCodegenDseOnCondJump)
+LUAU_FASTFLAG(LuauCodegenPropagateTagsAcrossChains2)
 
 // TODO: optimization can be improved by knowing which registers are live in at each VM exit
 
@@ -37,6 +39,9 @@ struct StoreRegInfo
 
     // This register might contain a GC object
     bool maybeGco = false;
+
+    // This register can be assumed to not be used in a VM exit
+    bool ignoreAtExit = false;
 
     // Knowing the last stored tag can help safely remove additional unused partial stores
     uint8_t knownTag = kUnknownTag;
@@ -178,6 +183,9 @@ struct RemoveDeadStoreState
 
         // Opaque register definition removes the knowledge of the actual tag value
         regInfo.knownTag = kUnknownTag;
+
+        // New value defined, before MARK_DEAD is used again, it might be used in a VM exit
+        regInfo.ignoreAtExit = false;
     }
 
     // When a register value is being used (read), we forget about the last store location to not kill them
@@ -193,13 +201,30 @@ struct RemoveDeadStoreState
     }
 
     // When checking control flow, such as exit to fallback blocks:
-    // For VM exits, we keep all stores because we don't have information on what registers are live at the start of the VM assist
+    // For VM exits, we keep all stores except marked dead because we don't have information on what registers are live at the start of the VM assist
     // For regular blocks, we check which registers are expected to be live at entry (if we have CFG information available)
     void checkLiveIns(IrOp op)
     {
         if (op.kind == IrOpKind::VmExit)
         {
-            readAllRegs();
+            if (FFlag::LuauCodegenMarkDeadRegisters2)
+            {
+                for (int i = 0; i <= maxReg; i++)
+                {
+                    StoreRegInfo& regInfo = info[i];
+
+                    if (regInfo.ignoreAtExit && !regInfo.maybeGco)
+                        continue;
+
+                    useReg(i);
+                }
+
+                hasGcoToClear = false;
+            }
+            else
+            {
+                readAllRegs();
+            }
         }
         else if (op.kind == IrOpKind::Block)
         {
@@ -253,6 +278,23 @@ struct RemoveDeadStoreState
                     }
                 }
             }
+        }
+    }
+
+    void markUnusedAtExit(int start, int count)
+    {
+        CODEGEN_ASSERT(FFlag::LuauCodegenMarkDeadRegisters2);
+        CODEGEN_ASSERT(count != 0);
+
+        int e = count == -1 ? maxReg : start + count - 1;
+
+        for (int i = start; i <= e; i++)
+        {
+            StoreRegInfo& regInfo = info[i];
+
+            // Stores to captured registers are not removed since we don't track their uses outside of function
+            if (!function.cfg.captured.regs.test(i))
+                regInfo.ignoreAtExit = true;
         }
     }
 
@@ -597,7 +639,7 @@ static bool tryReplaceVectorValueWithFullStore(
         IrInst& storeInst = function.instructions[instIndex];
         CODEGEN_ASSERT(storeInst.cmd == IrCmd::STORE_VECTOR);
 
-        if (FFlag::LuauCodegenOpReadOnly && !HAS_OP_E(storeInst))
+        if (!HAS_OP_E(storeInst))
             storeInst.ops.push_back({});
 
         replace(function, OP_E(storeInst), prevTagOp);
@@ -625,7 +667,7 @@ static bool tryReplaceVectorValueWithFullStore(
             IrInst& storeInst = function.instructions[instIndex];
             CODEGEN_ASSERT(storeInst.cmd == IrCmd::STORE_VECTOR);
 
-            if (FFlag::LuauCodegenOpReadOnly && !HAS_OP_E(storeInst))
+            if (!HAS_OP_E(storeInst))
                 storeInst.ops.push_back({});
 
             replace(function, OP_E(storeInst), prevTagOp);
@@ -647,7 +689,7 @@ static bool tryReplaceVectorValueWithFullStore(
             IrInst& storeInst = function.instructions[instIndex];
             CODEGEN_ASSERT(storeInst.cmd == IrCmd::STORE_VECTOR);
 
-            if (FFlag::LuauCodegenOpReadOnly && !HAS_OP_E(storeInst))
+            if (!HAS_OP_E(storeInst))
                 storeInst.ops.push_back({});
 
             replace(function, OP_E(storeInst), prevTagOp);
@@ -697,6 +739,9 @@ static void markDeadStoresInInst(RemoveDeadStoreState& state, IrBuilder& build, 
 
             StoreRegInfo& regInfo = state.info[reg];
 
+            if (FFlag::LuauCodegenMarkDeadRegisters2)
+                regInfo.ignoreAtExit = false;
+
             if (tryReplaceTagWithFullStore(state, build, function, block, index, OP_A(inst), OP_B(inst), regInfo))
                 break;
 
@@ -716,7 +761,20 @@ static void markDeadStoresInInst(RemoveDeadStoreState& state, IrBuilder& build, 
         // To simplify, extra field store is preserved along with all other stores made so far
         if (OP_A(inst).kind == IrOpKind::VmReg)
         {
-            state.useReg(vmRegOp(OP_A(inst)));
+            if (FFlag::LuauCodegenMarkDeadRegisters2)
+            {
+                int reg = vmRegOp(OP_A(inst));
+
+                state.useReg(reg);
+
+                StoreRegInfo& regInfo = state.info[reg];
+
+                regInfo.ignoreAtExit = false;
+            }
+            else
+            {
+                state.useReg(vmRegOp(OP_A(inst)));
+            }
         }
         break;
     case IrCmd::STORE_POINTER:
@@ -728,6 +786,9 @@ static void markDeadStoresInInst(RemoveDeadStoreState& state, IrBuilder& build, 
                 return;
 
             StoreRegInfo& regInfo = state.info[reg];
+
+            if (FFlag::LuauCodegenMarkDeadRegisters2)
+                regInfo.ignoreAtExit = false;
 
             if (tryReplaceValueWithFullStore(state, build, function, block, index, OP_A(inst), OP_B(inst), regInfo))
             {
@@ -760,6 +821,9 @@ static void markDeadStoresInInst(RemoveDeadStoreState& state, IrBuilder& build, 
 
             StoreRegInfo& regInfo = state.info[reg];
 
+            if (FFlag::LuauCodegenMarkDeadRegisters2)
+                regInfo.ignoreAtExit = false;
+
             if (tryReplaceValueWithFullStore(state, build, function, block, index, OP_A(inst), OP_B(inst), regInfo))
                 break;
 
@@ -785,6 +849,9 @@ static void markDeadStoresInInst(RemoveDeadStoreState& state, IrBuilder& build, 
 
             StoreRegInfo& regInfo = state.info[reg];
 
+            if (FFlag::LuauCodegenMarkDeadRegisters2)
+                regInfo.ignoreAtExit = false;
+
             if (tryReplaceVectorValueWithFullStore(state, build, function, block, index, regInfo))
                 break;
 
@@ -809,6 +876,9 @@ static void markDeadStoresInInst(RemoveDeadStoreState& state, IrBuilder& build, 
                 return;
 
             StoreRegInfo& regInfo = state.info[reg];
+
+            if (FFlag::LuauCodegenMarkDeadRegisters2)
+                regInfo.ignoreAtExit = false;
 
             state.killTagAndValueStorePair(regInfo);
             state.killTValueStore(regInfo);
@@ -841,7 +911,7 @@ static void markDeadStoresInInst(RemoveDeadStoreState& state, IrBuilder& build, 
                     if (arg->cmd == IrCmd::TAG_VECTOR)
                         regInfo.maybeGco = false;
 
-                    if (arg->cmd == IrCmd::LOAD_TVALUE && (FFlag::LuauCodegenOpReadOnly ? HAS_OP_C(*arg) : OP_C(arg).kind != IrOpKind::None))
+                    if (arg->cmd == IrCmd::LOAD_TVALUE && HAS_OP_C(*arg))
                         regInfo.maybeGco = isGCO(function.tagOp(OP_C(arg)));
                 }
             }
@@ -858,6 +928,9 @@ static void markDeadStoresInInst(RemoveDeadStoreState& state, IrBuilder& build, 
                 return;
 
             StoreRegInfo& regInfo = state.info[reg];
+
+            if (FFlag::LuauCodegenMarkDeadRegisters2)
+                regInfo.ignoreAtExit = false;
 
             state.killTagAndValueStorePair(regInfo);
             state.killTValueStore(regInfo);
@@ -923,7 +996,7 @@ static void markDeadStoresInInst(RemoveDeadStoreState& state, IrBuilder& build, 
         state.checkLiveIns(OP_B(inst));
         break;
     case IrCmd::CHECK_BUFFER_LEN:
-        if (FFlag::LuauCodegenBufferRangeMerge3)
+        if (FFlag::LuauCodegenBufferRangeMerge4)
             state.checkLiveIns(OP_F(inst));
         else
             state.checkLiveIns(OP_D(inst));
@@ -933,6 +1006,21 @@ static void markDeadStoresInInst(RemoveDeadStoreState& state, IrBuilder& build, 
         break;
     case IrCmd::CHECK_CMP_INT:
         state.checkLiveIns(OP_D(inst));
+        break;
+
+    case IrCmd::JUMP_IF_TRUTHY:
+    case IrCmd::JUMP_IF_FALSY:
+    case IrCmd::JUMP_EQ_TAG:
+    case IrCmd::JUMP_CMP_INT:
+    case IrCmd::JUMP_EQ_POINTER:
+    case IrCmd::JUMP_CMP_NUM:
+    case IrCmd::JUMP_CMP_FLOAT:
+    case IrCmd::JUMP_FORN_LOOP_COND:
+    case IrCmd::JUMP_SLOT_MATCH:
+        visitVmRegDefsUses(state, function, inst);
+
+        if (FFlag::LuauCodegenDseOnCondJump)
+            state.checkLiveOuts(block);
         break;
 
     case IrCmd::JUMP:
@@ -980,6 +1068,11 @@ static void markDeadStoresInInst(RemoveDeadStoreState& state, IrBuilder& build, 
             state.hasAllocations = true;
         break;
 
+    case IrCmd::MARK_DEAD:
+        if (FFlag::LuauCodegenMarkDeadRegisters2)
+            state.markUnusedAtExit(vmRegOp(OP_A(inst)), function.intOp(OP_B(inst)));
+        break;
+
     default:
         // Guards have to be covered explicitly
         CODEGEN_ASSERT(!isNonTerminatingJump(inst.cmd));
@@ -993,6 +1086,10 @@ static void markDeadStoresInBlock(IrBuilder& build, IrBlock& block, RemoveDeadSt
 {
     IrFunction& function = build.function;
 
+    // Block might establish a safe environment right at the start and might take a VM exit
+    if ((block.flags & kBlockFlagSafeEnvCheck) != 0)
+        state.readAllRegs();
+
     for (uint32_t index = block.start; index <= block.finish; index++)
     {
         CODEGEN_ASSERT(index < function.instructions.size());
@@ -1000,6 +1097,24 @@ static void markDeadStoresInBlock(IrBuilder& build, IrBlock& block, RemoveDeadSt
 
         markDeadStoresInInst(state, build, function, block, inst, index);
     }
+}
+
+static void setupBlockEntryState(const IrFunction& function, const IrBlock& block, RemoveDeadStoreState& state)
+{
+    CODEGEN_ASSERT(FFlag::LuauCodegenPropagateTagsAcrossChains2);
+
+    propagateTagsFromPredecessors(
+        function,
+        block,
+        [&](size_t i)
+        {
+            return state.info[i].knownTag;
+        },
+        [&](size_t i, uint8_t tag)
+        {
+            state.info[i].knownTag = tag;
+        }
+    );
 }
 
 static void markDeadStoresInBlockChain(
@@ -1020,6 +1135,9 @@ static void markDeadStoresInBlockChain(
         // Clear the storage we reuse
         blockIdxChain.clear();
     }
+
+    if (FFlag::LuauCodegenPropagateTagsAcrossChains2)
+        setupBlockEntryState(function, *block, state);
 
     while (block)
     {

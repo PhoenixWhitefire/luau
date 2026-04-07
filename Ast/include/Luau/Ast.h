@@ -70,15 +70,25 @@ struct AstLocal
     AstLocal* shadow;
     size_t functionDepth;
     size_t loopDepth;
+    bool isConst;
 
     AstType* annotation;
 
-    AstLocal(const AstName& name, const Location& location, AstLocal* shadow, size_t functionDepth, size_t loopDepth, AstType* annotation)
+    AstLocal(
+        const AstName& name,
+        const Location& location,
+        AstLocal* shadow,
+        size_t functionDepth,
+        size_t loopDepth,
+        AstType* annotation,
+        bool isConst = false
+    )
         : name(name)
         , location(location)
         , shadow(shadow)
         , functionDepth(functionDepth)
         , loopDepth(loopDepth)
+        , isConst(isConst)
         , annotation(annotation)
     {
     }
@@ -202,6 +212,7 @@ public:
         Checked,
         Native,
         Deprecated,
+        DebugNoinline,
         Unknown
     };
 
@@ -327,6 +338,7 @@ enum class ConstantNumberParseResult
     Malformed,
     BinOverflow,
     HexOverflow,
+    IntOverflow,
 };
 
 class AstExprConstantNumber : public AstExpr
@@ -342,6 +354,18 @@ public:
     ConstantNumberParseResult parseResult;
 };
 
+class AstExprConstantInteger : public AstExpr
+{
+public:
+    LUAU_RTTI(AstExprConstantInteger)
+
+    AstExprConstantInteger(const Location& location, int64_t value, ConstantNumberParseResult parseResult = ConstantNumberParseResult::Ok);
+
+    void visit(AstVisitor* visitor) override;
+
+    int64_t value;
+    ConstantNumberParseResult parseResult;
+};
 class AstExprConstantString : public AstExpr
 {
 public:
@@ -1041,6 +1065,13 @@ public:
     AstTypePack* retTypes;
 };
 
+enum class AstTableAccess
+{
+    Read = 0b01,
+    Write = 0b10,
+    ReadWrite = 0b11,
+};
+
 struct AstDeclaredExternTypeProperty
 {
     AstName name;
@@ -1048,13 +1079,7 @@ struct AstDeclaredExternTypeProperty
     AstType* ty = nullptr;
     bool isMethod = false;
     Location location;
-};
-
-enum class AstTableAccess
-{
-    Read = 0b01,
-    Write = 0b10,
-    ReadWrite = 0b11,
+    AstTableAccess access = AstTableAccess::ReadWrite;
 };
 
 struct AstTableIndexer
@@ -1399,6 +1424,10 @@ public:
         return visit(static_cast<AstExpr*>(node));
     }
     virtual bool visit(class AstExprConstantNumber* node)
+    {
+        return visit(static_cast<AstExpr*>(node));
+    }
+    virtual bool visit(class AstExprConstantInteger* node)
     {
         return visit(static_cast<AstExpr*>(node));
     }
