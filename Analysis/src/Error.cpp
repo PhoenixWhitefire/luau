@@ -18,8 +18,6 @@
 
 LUAU_FASTINTVARIABLE(LuauIndentTypeMismatchMaxTypeLength, 10)
 
-LUAU_FASTFLAG(LuauTypeCheckerUdtfRenameClassToExtern)
-
 static std::string wrongNumberOfArgsString(
     size_t expectedCount,
     std::optional<size_t> maximumCount,
@@ -195,12 +193,7 @@ struct ErrorConverter
         if (get<TableType>(t))
             return "Key '" + e.key + "' not found in table '" + Luau::toString(t) + "'";
         else if (get<ExternType>(t))
-        {
-            if (FFlag::LuauTypeCheckerUdtfRenameClassToExtern)
-                return "Key '" + e.key + "' not found in external type '" + Luau::toString(t) + "'";
-            else
-                return "Key '" + e.key + "' not found in class '" + Luau::toString(t) + "'";
-        }
+            return "Key '" + e.key + "' not found in external type '" + Luau::toString(t) + "'";
         else
             return "Type '" + Luau::toString(e.table) + "' does not have key '" + e.key + "'";
     }
@@ -372,12 +365,7 @@ struct ErrorConverter
 
         TypeId t = follow(e.table);
         if (get<ExternType>(t))
-        {
-            if (FFlag::LuauTypeCheckerUdtfRenameClassToExtern)
-                s += "external type";
-            else
-                s += "class";
-        }
+            s += "external type";
         else
             s += "table";
 
@@ -819,6 +807,11 @@ struct ErrorConverter
     std::string operator()(const UserDefinedTypeFunctionError& e) const
     {
         return e.message;
+    }
+
+    std::string operator()(const BuiltInTypeFunctionError& e) const
+    {
+        return toString(e.error);
     }
 
     std::string operator()(const ReservedIdentifier& e) const
@@ -1362,6 +1355,11 @@ bool UserDefinedTypeFunctionError::operator==(const UserDefinedTypeFunctionError
     return message == rhs.message;
 }
 
+bool BuiltInTypeFunctionError::operator==(const BuiltInTypeFunctionError& rhs) const
+{
+    return error == rhs.error;
+}
+
 bool ReservedIdentifier::operator==(const ReservedIdentifier& rhs) const
 {
     return name == rhs.name;
@@ -1631,6 +1629,9 @@ void copyError(T& e, TypeArena& destArena, CloneState& cloneState)
     else if constexpr (std::is_same_v<T, UnexpectedTypePackInSubtyping>)
         e.tp = clone(e.tp);
     else if constexpr (std::is_same_v<T, UserDefinedTypeFunctionError>)
+    {
+    }
+    else if constexpr (std::is_same_v<T, BuiltInTypeFunctionError>)
     {
     }
     else if constexpr (std::is_same_v<T, CannotAssignToNever>)

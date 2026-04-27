@@ -8,8 +8,6 @@
 #include "Luau/TypeUtils.h"
 #include "Luau/Unifier2.h"
 
-LUAU_FASTFLAG(LuauUnifyWithSubtyping2)
-
 namespace Luau
 {
 
@@ -30,7 +28,10 @@ bool SubtypingUnifier::canBeUnified(TypeId ty) const
     return is<FreeType>(ty) || isBlocked(ty);
 }
 
-SubtypingUnifier::Result SubtypingUnifier::dispatchConstraints(NotNull<const Constraint> constraint, std::vector<ConstraintV> assumedConstraints) const
+SubtypingUnifier::Result SubtypingUnifier::dispatchConstraints(
+    NotNull<const Constraint> constraint,
+    std::vector<ConstraintV> assumedConstraints
+) const
 {
     UnifyResult unifierRes = UnifyResult::Ok;
     // NOTE: You *could* potentially reuse the input vector, but this seems

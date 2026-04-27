@@ -15,8 +15,6 @@ LUAU_FASTFLAG(LuauInstantiateInSubtyping)
 LUAU_FASTFLAG(DebugLuauForceOldSolver)
 LUAU_FASTFLAG(DebugLuauMagicTypes)
 LUAU_FASTINT(LuauSolverConstraintLimit)
-LUAU_FASTFLAG(LuauUnifyWithSubtyping2)
-LUAU_FASTFLAG(LuauReworkInfiniteTypeFinder)
 
 using namespace Luau;
 
@@ -462,10 +460,9 @@ local b: B.T = a
 
     if (!FFlag::DebugLuauForceOldSolver)
     {
-        const std::string expected =
-            "Expected this to be 'T' from 'game/B', but got 'T' from 'game/A'; \n"
-            "accessing `x` results in `number` in the latter type and `string` in the former type, and "
-            "`number` is not exactly `string`";
+        const std::string expected = "Expected this to be 'T' from 'game/B', but got 'T' from 'game/A'; \n"
+                                     "accessing `x` results in `number` in the latter type and `string` in the former type, and "
+                                     "`number` is not exactly `string`";
         CHECK(expected == toString(result.errors[0]));
     }
     else
@@ -509,10 +506,9 @@ local b: B.T = a
 
     if (!FFlag::DebugLuauForceOldSolver)
     {
-        const std::string expected =
-            "Expected this to be 'T' from 'game/C', but got 'T' from 'game/B'; \n"
-            "accessing `x` results in `number` in the latter type and `string` in the former type, and "
-            "`number` is not exactly `string`";
+        const std::string expected = "Expected this to be 'T' from 'game/C', but got 'T' from 'game/B'; \n"
+                                     "accessing `x` results in `number` in the latter type and `string` in the former type, and "
+                                     "`number` is not exactly `string`";
         CHECK(expected == toString(result.errors[0]));
     }
     else
@@ -866,9 +862,6 @@ TEST_CASE_FIXTURE(BuiltinsFixture, "internal_type_errors_are_only_reported_once"
     ScopedFastFlag sffs[] = {
         {FFlag::DebugLuauForceOldSolver, false},
         {FFlag::DebugLuauMagicTypes, true},
-        // With this flag on we no longer try to unify the members of the return
-        // table with `any`, so we don't end up being unable to solve constraints.
-        {FFlag::LuauUnifyWithSubtyping2, true},
     };
 
     fileResolver.source["game/A"] = R"(
@@ -939,8 +932,6 @@ TEST_CASE_FIXTURE(BuiltinsFixture, "invalid_local_alias_shouldnt_shadow_imported
 
 TEST_CASE_FIXTURE(BuiltinsFixture, "invalid_alias_should_export_as_error_type")
 {
-    ScopedFastFlag _{FFlag::LuauReworkInfiniteTypeFinder, true};
-
     fileResolver.source["game/A"] = R"(
         export type bad<T> = {bad<{T}>}
         return {}
