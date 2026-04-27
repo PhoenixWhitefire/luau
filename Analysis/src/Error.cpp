@@ -17,7 +17,6 @@
 #include <unordered_set>
 
 LUAU_FASTINTVARIABLE(LuauIndentTypeMismatchMaxTypeLength, 10)
-LUAU_FASTFLAG(LuauTypeCheckerUdtfRenameClassToExtern)
 
 static std::string wrongNumberOfArgsString(
     size_t expectedCount,

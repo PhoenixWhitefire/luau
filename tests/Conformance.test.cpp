@@ -27,6 +27,15 @@
 #include <vector>
 #include <math.h>
 
+#include <sys/stat.h>
+#ifdef _WIN32
+#include <direct.h>
+#define getCwd _getcwd
+#else
+#include <unistd.h>
+#define getCwd getcwd
+#endif
+
 extern bool verbose;
 extern bool codegen;
 extern int optimizationLevel;
@@ -46,7 +55,32 @@ LUAU_FASTFLAG(LuauIntegerType)
 LUAU_FASTFLAG(DebugLuauForceOldSolver)
 LUAU_FASTFLAG(LuauNewMathConstantsRuntime)
 LUAU_FASTFLAG(LuauCompileStringInterpWithZero)
-LUAU_FASTFLAG(LuauUdataDirectAccess)
+LUAU_FASTFLAG(LuauUdataDirectAccess3)
+
+#ifndef LUAU_CONFORMANCE_SOURCE_DIR
+// Walks up from the current directory looking for the Client folder,
+// replicating the logic from base unittest library.
+static std::string findConformanceSourceDir()
+{
+    char cwd[4096];
+    if (!getCwd(cwd, sizeof(cwd)))
+        return {};
+
+    std::string dir = cwd;
+    for (int i = 0; i < 20; ++i)
+    {
+        struct stat st;
+        if (stat((dir + "/Client/content").c_str(), &st) == 0 && (st.st_mode & S_IFDIR))
+            return dir + "/Client/Luau/tests/conformance";
+
+        size_t pos = dir.find_last_of("\\/");
+        if (pos == std::string::npos || pos == 0)
+            break;
+        dir.erase(pos);
+    }
+    return {};
+}
+#endif
 
 static lua_CompileOptions defaultOptions()
 {
@@ -209,20 +243,15 @@ static StateRef runConformance(
     path += "/";
     path += name;
 #else
-    std::string path = __FILE__;
-    // __FILE__ is not guaranteed to be absolute path because of reproducible BUCK2 builds.
-    if (path.find_last_of("\\/") == std::string::npos)
+    std::string path = findConformanceSourceDir();
+    if (path.empty())
     {
-        path = "Client/Luau/tests/conformance";
         if (const char* envDir = std::getenv("LUAU_CONFORMANCE_SOURCE_DIR"))
             path = envDir;
-        path += "/";
+        else
+            path = "Client/Luau/tests/conformance";
     }
-    else
-    {
-        path.erase(path.find_last_of("\\/"));
-        path += "/conformance/";
-    }
+    path += "/";
     path += name;
 #endif
 
@@ -365,7 +394,7 @@ static StateRef runConformance(
     }
 
     // Extra test for lowering on both platforms with assembly generation
-    if (luau_codegen_supported())
+    if (result == 0 && luau_codegen_supported())
     {
         Luau::CodeGen::AssemblyOptions assemblyOptions;
         assemblyOptions.compilationOptions = nativeOpts;
@@ -1175,8 +1204,31 @@ TEST_CASE("Math")
 TEST_CASE("Integers")
 {
     if (FFlag::LuauIntegerType && FFlag::LuauIntegerLibrary)
-        runConformance("integers.luau");
+    {
+        runConformance(
+            "integers.luau",
+            [](lua_State* L)
+            {
+                setupNativeHelpers(L);
+            }
+        );
+
+	if (codegen && luau_codegen_supported())
+	{
+        runConformance(
+            "integers_regspill.luau",
+
+            [](lua_State* L)
+            {
+                setupNativeHelpers(L);
+            }
+        );
+
+	}
+    }
 }
+
+
 
 TEST_CASE("Tables")
 {
@@ -3986,7 +4038,7 @@ TEST_CASE("NativeUserdata")
 
 TEST_CASE("UserdataDirectAccess")
 {
-    ScopedFastFlag sff{FFlag::LuauUdataDirectAccess, true};
+    ScopedFastFlag sff{FFlag::LuauUdataDirectAccess3, true};
 
     // Reset global state
     nameToAtom.clear();
