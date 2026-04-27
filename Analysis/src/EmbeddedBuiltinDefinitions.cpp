@@ -671,7 +671,7 @@ declare types: {
 std::string getTypeFunctionDefinitionSource()
 {
     std::string result;
-  
+
     if (FFlag::LuauTypeDefinitionsTypeIsSubtypeOf)
         result += kBuiltinDefinitionTypeMethodSrc;
     else
