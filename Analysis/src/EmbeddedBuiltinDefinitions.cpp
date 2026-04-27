@@ -4,6 +4,7 @@
 LUAU_FASTFLAGVARIABLE(LuauNewMathConstantsAnalysis)
 LUAU_FASTFLAGVARIABLE(LuauTypeCheckerVectorReadOnly)
 LUAU_FASTFLAG(LuauIntegerLibrary)
+LUAU_FASTFLAG(LuauIntegerType)
 LUAU_FASTFLAGVARIABLE(LuauTypeDefinitionsTypeIsSubtypeOf)
 
 namespace Luau
