@@ -570,7 +570,7 @@ static constexpr const char* kBuiltinDefinitionTypeMethodSrc_DEPRECATED = R"BUIL
 
 export type type = {
     tag: "nil" | "unknown" | "never" | "any" | "boolean" | "number" | "integer" | "string" | "buffer" | "thread" |
-         "singleton" | "negation" | "union" | "intersection" | "table" | "function" | "class" | "generic",
+         "singleton" | "negation" | "union" | "intersection" | "table" | "function" | "extern" | "generic",
 
     is: (self: type, arg: string) -> boolean,
 
