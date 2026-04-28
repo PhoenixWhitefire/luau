@@ -18,6 +18,7 @@ using namespace Luau;
 
 LUAU_FASTFLAG(LuauPropagateTypeAnnotationsInForInLoops)
 LUAU_FASTFLAG(DebugLuauForceOldSolver)
+LUAU_FASTFLAG(LuauForInLoopValueIsNonNil)
 
 TEST_SUITE_BEGIN("TypeInferLoops");
 
@@ -1646,6 +1647,21 @@ TEST_CASE_FIXTURE(BuiltinsFixture, "for_in_loop_annotations_apply_inside_lambdas
     REQUIRE(err);
     CHECK_EQ("number", toString(err->wantedType));
     CHECK_EQ("string", toString(err->givenType));
+}
+
+TEST_CASE_FIXTURE(Fixture, "for_in_loop_value_is_not_nil")
+{
+    ScopedFastFlag _{FFlag::LuauForInLoopValueIsNonNil, true};
+
+    CheckResult result = check(R"(
+        local t: { [string]: number? } = {}
+
+        for _, v in t do
+                v += 1
+        end
+    )");
+
+    LUAU_REQUIRE_ERROR_COUNT(0, result);
 }
 
 TEST_SUITE_END();

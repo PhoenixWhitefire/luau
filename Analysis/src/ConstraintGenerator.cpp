@@ -49,6 +49,7 @@ LUAU_FASTFLAG(LuauTypeFunctionStructuredErrors)
 LUAU_FASTFLAGVARIABLE(LuauKeepExplicitMapForGlobalTypes2)
 LUAU_FASTFLAGVARIABLE(LuauRefinementTypeVector)
 LUAU_FASTFLAG(LuauExternReadWriteAttributes)
+LUAU_FASTFLAGVARIABLE(LuauForInLoopValueIsNonNil)
 
 namespace Luau
 {
@@ -1379,6 +1380,22 @@ ControlFlow ConstraintGenerator::visit(const ScopePtr& scope, AstStatForIn* forI
 
     auto c = addConstraint(loopScope, keyVar->location, ReduceConstraint{intersectionTy});
     c->dependencies.push_back(iterable);
+
+    if (FFlag::LuauForInLoopValueIsNonNil && forIn->values.size == 1 && forIn->vars.size == 2)
+    {
+        AstLocal* valueVar = forIn->vars.data[1];
+        const DefId valueDef = dfg->getDef(valueVar);
+        const TypeId valueLoopVar = loopScope->lvalueTypes[valueDef];
+
+        const TypeId valueIntersectionTy =
+            createTypeFunctionInstance(builtinTypes->typeFunctions->intersectFunc, {valueLoopVar, builtinTypes->notNilType}, {}, loopScope, valueVar->location);
+
+        loopScope->bindings[valueVar] = Binding{valueIntersectionTy, valueVar->location};
+        loopScope->lvalueTypes[valueDef] = valueIntersectionTy;
+
+        auto valueConstraint = addConstraint(loopScope, valueVar->location, ReduceConstraint{valueIntersectionTy});
+        valueConstraint->dependencies.push_back(iterable);
+    }
 
     for (TypeId var : variableTypes)
     {
