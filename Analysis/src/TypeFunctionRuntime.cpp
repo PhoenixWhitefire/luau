@@ -23,11 +23,10 @@
 
 LUAU_DYNAMIC_FASTINT(LuauTypeFunctionSerdeIterationLimit)
 LUAU_FASTFLAG(LuauIntegerType)
-LUAU_FASTFLAGVARIABLE(LuauTypeFunctionTypeIsSubtypeOf)
-
 LUAU_FASTFLAGVARIABLE(LuauTypeFunctionSupportsFrozen)
 LUAU_FASTFLAGVARIABLE(LuauUdtfReserveStack)
 LUAU_FASTFLAGVARIABLE(LuauTypeFunctionStructuredErrors)
+LUAU_FASTFLAGVARIABLE(LuauUdtfTypeIsSubtypeOf)
 
 namespace Luau
 {
@@ -1975,7 +1974,7 @@ void registerTypeUserData(lua_State* L)
     lua_newtable(L);
     luaL_register(L, nullptr, typeUserdataMethods);
 
-    if (FFlag::LuauTypeFunctionTypeIsSubtypeOf)
+    if (FFlag::LuauUdtfTypeIsSubtypeOf)
     {
         lua_pushcfunction(L, isSubtypeOf, "issubtypeof");
         lua_setfield(L, -2, "issubtypeof");

@@ -14,7 +14,7 @@ LUAU_FASTFLAG(LuauTypeFunctionSupportsFrozen)
 LUAU_FASTFLAG(LuauTypeFunctionStructuredErrors)
 LUAU_FASTFLAG(LuauSubtypingMissingPropertiesAsNil)
 LUAU_FASTFLAG(LuauUdtfReserveStack)
-LUAU_FASTFLAG(LuauTypeFunctionTypeIsSubtypeOf)
+LUAU_FASTFLAG(LuauUdtfTypeIsSubtypeOf)
 
 TEST_SUITE_BEGIN("UserDefinedTypeFunctionTests");
 
@@ -2934,10 +2934,8 @@ type function test(t: type) return t end
 
 TEST_CASE_FIXTURE(BuiltinsFixture, "issubtypeof")
 {
-    ScopedFastFlag _[] = {
-        { FFlag::LuauSolverV2, true },
-        { FFlag::LuauTypeFunctionTypeIsSubtypeOf, true }
-    };
+    DOES_NOT_PASS_OLD_SOLVER_GUARD();
+    ScopedFastFlag sff{FFlag::LuauUdtfTypeIsSubtypeOf, true};
 
     CheckResult results = check(R"(
         type function checksubtype(a, b)

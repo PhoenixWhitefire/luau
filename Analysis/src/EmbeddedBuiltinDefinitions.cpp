@@ -5,7 +5,7 @@ LUAU_FASTFLAGVARIABLE(LuauNewMathConstantsAnalysis)
 LUAU_FASTFLAGVARIABLE(LuauTypeCheckerVectorReadOnly)
 LUAU_FASTFLAG(LuauIntegerLibrary)
 LUAU_FASTFLAG(LuauIntegerType)
-LUAU_FASTFLAGVARIABLE(LuauTypeDefinitionsTypeIsSubtypeOf)
+LUAU_FASTFLAG(LuauUdtfTypeIsSubtypeOf)
 
 namespace Luau
 {
@@ -672,7 +672,7 @@ std::string getTypeFunctionDefinitionSource()
 {
     std::string result;
 
-    if (FFlag::LuauTypeDefinitionsTypeIsSubtypeOf)
+    if (FFlag::LuauUdtfTypeIsSubtypeOf)
         result += kBuiltinDefinitionTypeMethodSrc;
     else
         result += kBuiltinDefinitionTypeMethodSrc_DEPRECATED;
