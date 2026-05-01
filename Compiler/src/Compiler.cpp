@@ -33,6 +33,8 @@ LUAU_FASTFLAGVARIABLE(LuauCompileDuptableConstantPack2)
 LUAU_FASTFLAGVARIABLE(LuauCompileVectorReveseMul)
 LUAU_FASTFLAG(LuauIntegerType)
 LUAU_FASTFLAGVARIABLE(LuauCompileStringInterpWithZero)
+LUAU_FASTFLAGVARIABLE(LuauCompileStringInterpTargetTop)
+LUAU_FASTFLAGVARIABLE(LuauCompileNoOptNext)
 LUAU_FASTFLAG(DebugLuauNoInline)
 
 namespace Luau
@@ -2008,7 +2010,11 @@ struct Compiler
 
         RegScope rs(this);
 
-        uint8_t baseReg = allocReg(expr, unsigned(2 + expr->expressions.size - skippedSubExpr));
+        unsigned int regCount = unsigned(2 + expr->expressions.size - skippedSubExpr);
+
+        // Optimization: have the format call place the result directly into the target to avoid an extra MOVE
+        bool targetTop = FFlag::LuauCompileStringInterpTargetTop && targetTemp && target == regTop - 1;
+        uint8_t baseReg = targetTop ? allocReg(expr, regCount - 1) - 1 : allocReg(expr, regCount);
 
         emitLoadK(baseReg, formatStringIndex);
 
@@ -2032,7 +2038,8 @@ struct Compiler
         bytecode.emitABC(LOP_NAMECALL, baseReg, baseReg, uint8_t(BytecodeBuilder::getStringHash(formatMethod)));
         bytecode.emitAux(formatMethodIndex);
         bytecode.emitABC(LOP_CALL, baseReg, uint8_t(expr->expressions.size + 2 - skippedSubExpr), 2);
-        bytecode.emitABC(LOP_MOVE, target, baseReg, 0);
+        if (target != baseReg)
+            bytecode.emitABC(LOP_MOVE, target, baseReg, 0);
     }
 
     static uint8_t encodeHashSize(unsigned int hashSize)
@@ -2555,6 +2562,14 @@ struct Compiler
         else if (AstExprConstantNumber* expr = node->as<AstExprConstantNumber>())
         {
             int32_t cid = bytecode.addConstantNumber(expr->value);
+            if (cid < 0)
+                CompileError::raise(expr->location, "Exceeded constant limit; simplify the code to compile");
+
+            emitLoadK(target, cid);
+        }
+        else if (AstExprConstantInteger* expr = node->as<AstExprConstantInteger>())
+        {
+            int32_t cid = bytecode.addConstantInteger(expr->value);
             if (cid < 0)
                 CompileError::raise(expr->location, "Exceeded constant limit; simplify the code to compile");
 
@@ -3525,7 +3540,7 @@ struct Compiler
                 else if (builtin.isGlobal("pairs")) // for .. in pairs(t)
                     skipOp = LOP_FORGPREP_NEXT;
             }
-            else if (stat->values.size == 2)
+            else if (stat->values.size == 2 && (!FFlag::LuauCompileNoOptNext || (!getfenvUsed && !setfenvUsed)))
             {
                 Builtin builtin = getBuiltin(stat->values.data[0], globals, variables);
 
