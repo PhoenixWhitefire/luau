@@ -32,7 +32,7 @@ LUAU_FASTFLAG(LuauLValueCompoundAssignmentVisitLhs)
 LUAU_FASTFLAG(LuauUnifier2HandleMismatchedPacks2)
 LUAU_FASTFLAG(LuauReplacerRespectsReboundGenerics)
 LUAU_FASTFLAG(LuauOverloadGetsInstantiated2)
-
+LUAU_FASTFLAG(LuauIteratingTablesWithoutIndexers)
 
 TEST_SUITE_BEGIN("TableTests");
 
@@ -6743,5 +6743,28 @@ TEST_CASE_FIXTURE(Fixture, "compound_assignment_writes_lhs")
     REQUIRE(get<PropertyAccessViolation>(result.errors[0]));
 }
 
+TEST_CASE_FIXTURE(Fixture, "iterate_table_without_indexer")
+{
+    ScopedFastFlag sff{FFlag::LuauIteratingTablesWithoutIndexers, true};
+
+    CheckResult result = check(R"(
+        local t = {
+            hello = true,
+            bye = false
+        }
+
+        for k, v in t do
+            local x: "hello" | "bye" = k
+            local y: true | false = v
+        end
+
+        for k, v: string in t do
+        end
+    )");
+
+    LUAU_REQUIRE_ERROR_COUNT(1, result);
+    REQUIRE(result.errors[0].location.begin.line == 11);
+    LUAU_REQUIRE_ERROR(result, TypeMismatch);
+}
 
 TEST_SUITE_END();

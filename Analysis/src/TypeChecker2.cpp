@@ -26,6 +26,7 @@
 #include "Luau/TypeUtils.h"
 #include "Luau/TypeOrPack.h"
 #include "Luau/VisitType.h"
+#include "Luau/BuiltinTypeFunctions.h"
 
 #include <algorithm>
 #include <sstream>
@@ -43,6 +44,7 @@ LUAU_FASTFLAGVARIABLE(LuauComparisonToNilsIsAlwaysOk2)
 LUAU_FASTFLAGVARIABLE(LuauLValueCompoundAssignmentVisitLhs)
 LUAU_FASTFLAG(LuauExternReadWriteAttributes)
 LUAU_FASTFLAG(LuauThreadUniferStateThroughTypeFunctionReduction)
+LUAU_FASTFLAGVARIABLE(LuauIteratingTablesWithoutIndexers)
 
 namespace Luau
 {
@@ -1077,14 +1079,49 @@ void TypeChecker2::visit(AstStatForIn* forInStatement)
     }
     else if (const TableType* ttv = get<TableType>(iteratorTy))
     {
-        if ((forInStatement->vars.size == 1 || forInStatement->vars.size == 2) && ttv->indexer)
+        if (FFlag::LuauIteratingTablesWithoutIndexers)
         {
-            testIsSubtype(variableTypes[0], ttv->indexer->indexType, forInStatement->vars.data[0]->location);
-            if (variableTypes.size() == 2)
-                testIsSubtype(variableTypes[1], ttv->indexer->indexResultType, forInStatement->vars.data[1]->location);
+            TypeId indexType;
+            TypeId indexResultType;
+            bool hasIndexer = false;
+
+            if (ttv->indexer)
+            {
+                indexType = ttv->indexer->indexType;
+                indexResultType = ttv->indexer->indexResultType;
+                hasIndexer = true;
+            }
+            else
+            {
+                if (ttv->props.size() > 0)
+                {
+                    TypeId clone = arena.addType(iteratorTy->clone());
+                    indexType = arena.addTypeFunction(builtinTypes->typeFunctions->keyofFunc, {clone}, {});
+                    indexResultType = arena.addTypeFunction(builtinTypes->typeFunctions->indexFunc, {clone, indexType}, {});
+                    hasIndexer = true;
+                }
+            }
+
+            if ((forInStatement->vars.size == 1 || forInStatement->vars.size == 2) && hasIndexer)
+            {
+                testIsSubtype(variableTypes[0], indexType, forInStatement->vars.data[0]->location);
+                if (variableTypes.size() == 2)
+                    testIsSubtype(variableTypes[1], indexResultType, forInStatement->vars.data[1]->location);
+            }
+            else
+                reportError(GenericError{"Cannot iterate over a table without indexer"}, forInStatement->values.data[0]->location);
         }
         else
-            reportError(GenericError{"Cannot iterate over a table without indexer"}, forInStatement->values.data[0]->location);
+        {
+            if ((forInStatement->vars.size == 1 || forInStatement->vars.size == 2) && ttv->indexer)
+            {
+                testIsSubtype(variableTypes[0], ttv->indexer->indexType, forInStatement->vars.data[0]->location);
+                if (variableTypes.size() == 2)
+                    testIsSubtype(variableTypes[1], ttv->indexer->indexResultType, forInStatement->vars.data[1]->location);
+            }
+            else
+                reportError(GenericError{"Cannot iterate over a table without indexer"}, forInStatement->values.data[0]->location);
+        }
     }
     else if (get<AnyType>(iteratorTy) || get<ErrorType>(iteratorTy) || get<NeverType>(iteratorTy))
     {
