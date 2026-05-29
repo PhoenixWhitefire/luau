@@ -16,6 +16,7 @@ LUAU_FASTFLAG(LuauCodegenInteger2)
 LUAU_FASTFLAG(LuauCodegenDseOnCondJump)
 LUAU_FASTFLAG(LuauCodegenMarkDeadRegisters2)
 LUAU_FASTFLAGVARIABLE(LuauCodegenIntegerFastcall2k)
+LUAU_FASTFLAGVARIABLE(LuauCodegenStringNamecall)
 
 namespace Luau
 {
@@ -1791,6 +1792,49 @@ bool translateInstNamecall(IrBuilder& build, const Instruction* pc, int pcpos)
 
             if (build.hostHooks.vectorNamecall(build, field, str->len, callra, rb, nparams, nresults, pcpos))
                 return true;
+        }
+
+        build.inst(IrCmd::FALLBACK_NAMECALL, build.constUint(pcpos), build.vmReg(ra), build.vmReg(rb), build.vmConst(aux));
+        return false;
+    }
+
+    if (FFlag::LuauCodegenStringNamecall && bcTypes.a == LBC_TYPE_STRING)
+    {
+        build.loadAndCheckTag(build.vmReg(rb), LUA_TSTRING, build.vmExit(pcpos));
+
+        Instruction call = pc[2];
+        CODEGEN_ASSERT(LUAU_INSN_OP(call) == LOP_CALL);
+
+        int callra = LUAU_INSN_A(call);
+        int nparams = LUAU_INSN_B(call) - 1;
+        int nresults = LUAU_INSN_C(call) - 1;
+
+        TString* str = gco2ts(build.function.proto->k[aux].value.gc);
+        const char* field = getstr(str);
+
+        printf("%s %ia %ir\n", field, nparams, nresults);
+
+        if ((strcmp(field, "byte") && nparams == 1 && nresults == 1) ||
+            (strcmp(field, "char") && nparams == 1 && nresults == 1) ||
+            (strcmp(field, "len") && nparams == 0 && nresults == 1)  ||
+            (strcmp(field, "sub") && nparams == 2 && nresults == 1)
+        )
+        {
+            IrOp fallback = build.fallbackBlock(pcpos);
+
+            IrOp res = build.inst(
+                IrCmd::INVOKE_FASTCALL,
+                build.constUint(LBF_STRING_BYTE),
+                build.vmReg(ra),
+                build.vmReg(ra + 1),
+                build.vmReg(ra + 2),
+                build.undef(),
+                build.constInt(nparams),
+                build.constInt(nresults)
+            );
+
+            build.inst(IrCmd::CHECK_FASTCALL_RES, res, fallback);
+            return true;
         }
 
         build.inst(IrCmd::FALLBACK_NAMECALL, build.constUint(pcpos), build.vmReg(ra), build.vmReg(rb), build.vmConst(aux));
