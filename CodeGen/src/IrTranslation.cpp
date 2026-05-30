@@ -1800,8 +1800,6 @@ bool translateInstNamecall(IrBuilder& build, const Instruction* pc, int pcpos)
 
     if (FFlag::LuauCodegenStringNamecall && bcTypes.a == LBC_TYPE_STRING)
     {
-        build.loadAndCheckTag(build.vmReg(rb), LUA_TSTRING, build.vmExit(pcpos));
-
         Instruction call = pc[2];
         CODEGEN_ASSERT(LUAU_INSN_OP(call) == LOP_CALL);
 
@@ -1812,19 +1810,22 @@ bool translateInstNamecall(IrBuilder& build, const Instruction* pc, int pcpos)
         TString* str = gco2ts(build.function.proto->k[aux].value.gc);
         const char* field = getstr(str);
 
-        printf("%s %ia %ir\n", field, nparams, nresults);
+        int bfid = strcmp(field, "byte")    == 0 ? LBF_STRING_BYTE
+                    : strcmp(field, "len")  == 0 ? LBF_STRING_LEN
+                    : strcmp(field, "sub")  == 0 ? LBF_STRING_SUB
+                    : LBF_NONE;
 
-        if ((strcmp(field, "byte") && nparams == 1 && nresults == 1) ||
-            (strcmp(field, "char") && nparams == 1 && nresults == 1) ||
-            (strcmp(field, "len") && nparams == 0 && nresults == 1)  ||
-            (strcmp(field, "sub") && nparams == 2 && nresults == 1)
+        if (((bfid == LBF_STRING_BYTE && nparams == 2 && nresults <= 1)  ||
+             (bfid == LBF_STRING_LEN  && nparams == 1 && nresults <= 1)  ||
+             (bfid == LBF_STRING_SUB  && nparams == 3 && nresults <= 1)) &&
+            nparams != -1
         )
         {
-            IrOp fallback = build.fallbackBlock(pcpos);
+            build.loadAndCheckTag(build.vmReg(rb), LUA_TSTRING, build.vmExit(pcpos));
 
             IrOp res = build.inst(
                 IrCmd::INVOKE_FASTCALL,
-                build.constUint(LBF_STRING_BYTE),
+                build.constUint(bfid),
                 build.vmReg(ra),
                 build.vmReg(ra + 1),
                 build.vmReg(ra + 2),
@@ -1833,12 +1834,13 @@ bool translateInstNamecall(IrBuilder& build, const Instruction* pc, int pcpos)
                 build.constInt(nresults)
             );
 
-            build.inst(IrCmd::CHECK_FASTCALL_RES, res, fallback);
+            //build.inst(IrCmd::CHECK_FASTCALL_RES, res, fallback);
+
+            if (nresults == LUA_MULTRET)
+                build.inst(IrCmd::ADJUST_STACK_TO_REG, build.vmReg(ra), res);
+
             return true;
         }
-
-        build.inst(IrCmd::FALLBACK_NAMECALL, build.constUint(pcpos), build.vmReg(ra), build.vmReg(rb), build.vmConst(aux));
-        return false;
     }
 
     if (isUserdataBytecodeType(bcTypes.a))
