@@ -7,6 +7,7 @@
 #include "Luau/Variant.h"
 #include "Luau/TypeFwd.h"
 #include "Luau/TypeIds.h"
+#include "Luau/VisitType.h"
 
 #include <string>
 #include <memory>
@@ -348,16 +349,14 @@ struct Constraint
     Location location;
     ConstraintV c;
 
-    std::vector<NotNull<Constraint>> dependencies;
-
-    TypeIds DEPRECATED_getMaybeMutatedFreeTypes() const;
+    // Clip with LuauConstraintGraph
+    std::vector<NotNull<Constraint>> DEPRECATED_dependencies;
 
     /**
      * Return the types and type packs that may be mutated by this constraint.
      * Currently we do not do anything with type packs.
      */
     std::pair<TypeIds, TypePackIds> getMaybeMutatedTypes() const;
-
 };
 
 using ConstraintPtr = std::unique_ptr<Constraint>;
@@ -381,5 +380,30 @@ const T* get(const Constraint& c)
 {
     return getMutable<T>(asMutable(c));
 }
+
+struct ReferenceCountInitializer : TypeOnceVisitor
+{
+    NotNull<TypeIds> mutatedTypes;
+    TypePackIds* mutatedTypePacks;
+    bool traverseIntoTypeFunctions = true;
+
+    explicit ReferenceCountInitializer(NotNull<TypeIds> mutatedTypes, NotNull<TypePackIds> mutatedTypePacks);
+
+    bool visit(TypeId ty, const FreeType&) override;
+
+    bool visit(TypeId ty, const BlockedType&) override;
+
+    bool visit(TypeId ty, const PendingExpansionType&) override;
+
+    bool visit(TypeId ty, const TableType& tt) override;
+
+    bool visit(TypeId ty, const ExternType&) override;
+
+    bool visit(TypeId, const TypeFunctionInstanceType& tfit) override;
+
+    bool visit(TypePackId tp, const BlockedTypePack&) override;
+    bool visit(TypePackId tp, const FreeTypePack&) override;
+
+};
 
 } // namespace Luau

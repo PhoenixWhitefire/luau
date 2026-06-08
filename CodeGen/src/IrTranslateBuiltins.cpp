@@ -9,9 +9,9 @@
 
 #include <math.h>
 
-LUAU_FASTFLAG(LuauCodegenBufferRangeMerge4)
-LUAU_FASTFLAGVARIABLE(LuauCodegenBufNoDefTag)
+LUAU_FASTFLAGVARIABLE(LuauCodegenIntegerArg3Fix)
 LUAU_FASTFLAG(LuauCodegenInteger2)
+LUAU_FASTFLAGVARIABLE(LuauCodegenBufferInteger)
 
 // TODO: when nresults is less than our actual result count, we can skip computing/writing unused results
 
@@ -887,13 +887,16 @@ static void translateBufferArgsAndCheckBounds(
     int size,
     int pcpos,
     IrOp& buf,
-    IrOp& intIndex
+    IrOp& intIndex,
+    bool loadInt64 = false
 )
 {
     build.loadAndCheckTag(build.vmReg(arg), LUA_TBUFFER, build.vmExit(pcpos));
     builtinCheckDouble(build, args, pcpos);
 
-    if (nparams == 3)
+    if (nparams == 3 && loadInt64)
+        builtinCheckInt64(build, arg3, pcpos);
+    else if (nparams == 3)
         builtinCheckDouble(build, arg3, pcpos);
 
     buf = build.inst(IrCmd::LOAD_POINTER, build.vmReg(arg));
@@ -901,10 +904,7 @@ static void translateBufferArgsAndCheckBounds(
     IrOp numIndex = builtinLoadDouble(build, args);
     intIndex = build.inst(IrCmd::NUM_TO_INT, numIndex);
 
-    if (FFlag::LuauCodegenBufferRangeMerge4)
-        build.inst(IrCmd::CHECK_BUFFER_LEN, buf, intIndex, build.constInt(0), build.constInt(size), build.undef(), build.vmExit(pcpos));
-    else
-        build.inst(IrCmd::CHECK_BUFFER_LEN, buf, intIndex, build.constInt(size), build.vmExit(pcpos));
+    build.inst(IrCmd::CHECK_BUFFER_LEN, buf, intIndex, build.constInt(0), build.constInt(size), build.undef(), build.vmExit(pcpos));
 }
 
 static BuiltinImplResult translateBuiltinBufferRead(
@@ -918,20 +918,21 @@ static BuiltinImplResult translateBuiltinBufferRead(
     int pcpos,
     IrCmd readCmd,
     int size,
-    IrCmd convCmd
+    IrCmd convCmd,
+    IrCmd storeCmd = IrCmd::STORE_DOUBLE,
+    uint8_t storeTag = LUA_TNUMBER
 )
 {
     if (nparams < 2 || nresults > 1)
         return {BuiltinImplType::None, -1};
 
     IrOp buf, intIndex;
-    translateBufferArgsAndCheckBounds(build, nparams, arg, args, arg3, size, pcpos, buf, intIndex);
+    translateBufferArgsAndCheckBounds(build, nparams, arg, args, arg3, size, pcpos, buf, intIndex, false);
 
-    IrOp result =
-        FFlag::LuauCodegenBufNoDefTag ? build.inst(readCmd, buf, intIndex, build.constTag(LUA_TBUFFER)) : build.inst(readCmd, buf, intIndex);
+    IrOp result = build.inst(readCmd, buf, intIndex, build.constTag(LUA_TBUFFER));
 
-    build.inst(IrCmd::STORE_DOUBLE, build.vmReg(ra), convCmd == IrCmd::NOP ? result : build.inst(convCmd, result));
-    build.inst(IrCmd::STORE_TAG, build.vmReg(ra), build.constTag(LUA_TNUMBER));
+    build.inst(storeCmd, build.vmReg(ra), convCmd == IrCmd::NOP ? result : build.inst(convCmd, result));
+    build.inst(IrCmd::STORE_TAG, build.vmReg(ra), build.constTag(storeTag));
 
     return {BuiltinImplType::Full, 1};
 }
@@ -947,21 +948,19 @@ static BuiltinImplResult translateBuiltinBufferWrite(
     int pcpos,
     IrCmd writeCmd,
     int size,
-    IrCmd convCmd
+    IrCmd convCmd,
+    bool loadInt64 = false
 )
 {
     if (nparams < 3 || nresults > 0)
         return {BuiltinImplType::None, -1};
 
     IrOp buf, intIndex;
-    translateBufferArgsAndCheckBounds(build, nparams, arg, args, arg3, size, pcpos, buf, intIndex);
+    translateBufferArgsAndCheckBounds(build, nparams, arg, args, arg3, size, pcpos, buf, intIndex, loadInt64);
 
-    IrOp numValue = builtinLoadDouble(build, arg3);
+    IrOp numValue = loadInt64 ? builtinLoadInt64(build, arg3) : builtinLoadDouble(build, arg3);
 
-    if (FFlag::LuauCodegenBufNoDefTag)
-        build.inst(writeCmd, buf, intIndex, convCmd == IrCmd::NOP ? numValue : build.inst(convCmd, numValue), build.constTag(LUA_TBUFFER));
-    else
-        build.inst(writeCmd, buf, intIndex, convCmd == IrCmd::NOP ? numValue : build.inst(convCmd, numValue));
+    build.inst(writeCmd, buf, intIndex, convCmd == IrCmd::NOP ? numValue : build.inst(convCmd, numValue), build.constTag(LUA_TBUFFER));
 
     return {BuiltinImplType::Full, 0};
 }
@@ -1378,13 +1377,32 @@ static BuiltinImplResult translateBuiltinInt64Binary(
     return {BuiltinImplType::Full, 1};
 }
 
-static BuiltinImplResult translateBuiltinInt64MinMax(IrBuilder& build, int nparams, int ra, int arg, IrOp args, int nresults, int pcpos, bool min)
+static BuiltinImplResult translateBuiltinInt64MinMax(
+    IrBuilder& build,
+    int nparams,
+    int ra,
+    int arg,
+    IrOp args,
+    IrOp arg3,
+    int nresults,
+    int pcpos,
+    bool min
+)
 {
     if (nparams < 2 || nresults > 1)
         return {BuiltinImplType::None, -1};
 
     builtinCheckInt64(build, build.vmReg(arg), pcpos);
     builtinCheckInt64(build, args, pcpos);
+
+    if (FFlag::LuauCodegenIntegerArg3Fix)
+    {
+        if (nparams >= 3)
+            builtinCheckInt64(build, arg3, pcpos);
+
+        for (int i = 4; i <= nparams; ++i)
+            builtinCheckInt64(build, build.vmReg(vmRegOp(args) + (i - 2)), pcpos);
+    }
 
     IrOp va = builtinLoadInt64(build, build.vmReg(arg));
     IrOp vb = builtinLoadInt64(build, args);
@@ -1393,14 +1411,24 @@ static BuiltinImplResult translateBuiltinInt64MinMax(IrBuilder& build, int npara
 
     // vb < va ? vb : va
     IrOp selectOp = build.inst(IrCmd::SELECT_INT64, va, vb, vb, va, cond);
-    for (int i = 3; i <= nparams; ++i)
+
+    if (FFlag::LuauCodegenIntegerArg3Fix && nparams >= 3)
     {
-        builtinCheckInt64(build, build.vmReg(vmRegOp(args) + (i - 2)), pcpos);
+        IrOp vc = builtinLoadInt64(build, arg3);
+
+        selectOp = build.inst(IrCmd::SELECT_INT64, vc, selectOp, selectOp, vc, cond);
+    }
+
+    for (int i = (FFlag::LuauCodegenIntegerArg3Fix ? 4 : 3); i <= nparams; ++i)
+    {
+        if (!FFlag::LuauCodegenIntegerArg3Fix)
+            builtinCheckInt64(build, build.vmReg(vmRegOp(args) + (i - 2)), pcpos);
 
         IrOp vc = builtinLoadInt64(build, build.vmReg(vmRegOp(args) + (i - 2)));
 
         selectOp = build.inst(IrCmd::SELECT_INT64, vc, selectOp, selectOp, vc, cond);
     }
+
     build.inst(IrCmd::STORE_INT64, build.vmReg(ra), selectOp);
     build.inst(IrCmd::STORE_TAG, build.vmReg(ra), build.constTag(LUA_TINTEGER));
 
@@ -1652,18 +1680,18 @@ static BuiltinImplResult translateBuiltinInt64Compare(
     return {BuiltinImplType::Full, 1};
 }
 
-static BuiltinImplResult translateBuiltinInt64Clamp(IrBuilder& build, int nparams, int ra, int arg, IrOp args, int nresults, int pcpos)
+static BuiltinImplResult translateBuiltinInt64Clamp(IrBuilder& build, int nparams, int ra, int arg, IrOp args, IrOp arg3, int nresults, int pcpos)
 {
     if (nparams < 3 || nresults > 1)
         return {BuiltinImplType::None, -1};
 
     builtinCheckInt64(build, build.vmReg(arg), pcpos);
     builtinCheckInt64(build, args, pcpos);
-    builtinCheckInt64(build, build.vmReg(vmRegOp(args) + 1), pcpos);
+    builtinCheckInt64(build, FFlag::LuauCodegenIntegerArg3Fix ? arg3 : build.vmReg(vmRegOp(args) + 1), pcpos);
 
     IrOp val = builtinLoadInt64(build, build.vmReg(arg));
     IrOp mi = builtinLoadInt64(build, args);
-    IrOp mx = builtinLoadInt64(build, build.vmReg(vmRegOp(args) + 1));
+    IrOp mx = builtinLoadInt64(build, FFlag::LuauCodegenIntegerArg3Fix ? arg3 : build.vmReg(vmRegOp(args) + 1));
 
     // guard: min <= max
     build.inst(IrCmd::CHECK_CMP_INT64, mi, mx, build.cond(IrCondition::LessEqual), build.vmExit(pcpos));
@@ -1734,10 +1762,20 @@ BuiltinImplResult translateBuiltin(
         case LBF_BUFFER_WRITEF32:
         case LBF_BUFFER_READF64:
         case LBF_BUFFER_WRITEF64:
+        case LBF_BUFFER_READINTEGER:
             if (!isCompatibleConstant(build, args, IrConstKind::Double))
                 return {BuiltinImplType::None, -1};
 
             if (!isCompatibleConstant(build, arg3, IrConstKind::Double))
+                return {BuiltinImplType::None, -1};
+
+            break;
+
+        case LBF_BUFFER_WRITEINTEGER:
+            if (!isCompatibleConstant(build, args, IrConstKind::Double))
+                return {BuiltinImplType::None, -1};
+
+            if (!isCompatibleConstant(build, arg3, IrConstKind::Int64))
                 return {BuiltinImplType::None, -1};
 
             break;
@@ -1899,6 +1937,16 @@ BuiltinImplResult translateBuiltin(
         return translateBuiltinBufferRead(build, nparams, ra, arg, args, arg3, nresults, pcpos, IrCmd::BUFFER_READF64, 8, IrCmd::NOP);
     case LBF_BUFFER_WRITEF64:
         return translateBuiltinBufferWrite(build, nparams, ra, arg, args, arg3, nresults, pcpos, IrCmd::BUFFER_WRITEF64, 8, IrCmd::NOP);
+    case LBF_BUFFER_READINTEGER:
+        if (FFlag::LuauCodegenBufferInteger)
+            return translateBuiltinBufferRead(
+                build, nparams, ra, arg, args, arg3, nresults, pcpos, IrCmd::BUFFER_READI64, 8, IrCmd::NOP, IrCmd::STORE_INT64, LUA_TINTEGER
+            );
+        return {BuiltinImplType::None, -1};
+    case LBF_BUFFER_WRITEINTEGER:
+        if (FFlag::LuauCodegenBufferInteger)
+            return translateBuiltinBufferWrite(build, nparams, ra, arg, args, arg3, nresults, pcpos, IrCmd::BUFFER_WRITEI64, 8, IrCmd::NOP, true);
+        return {BuiltinImplType::None, -1};
     case LBF_VECTOR_MAGNITUDE:
         return translateBuiltinVectorMagnitude(build, nparams, ra, arg, args, arg3, nresults, pcpos);
     case LBF_VECTOR_NORMALIZE:
@@ -1973,11 +2021,11 @@ BuiltinImplResult translateBuiltin(
         return {BuiltinImplType::None, -1};
     case LBF_INTEGER_MIN:
         if (FFlag::LuauCodegenInteger2)
-            return translateBuiltinInt64MinMax(build, nparams, ra, arg, args, nresults, pcpos, true);
+            return translateBuiltinInt64MinMax(build, nparams, ra, arg, args, arg3, nresults, pcpos, true);
         return {BuiltinImplType::None, -1};
     case LBF_INTEGER_MAX:
         if (FFlag::LuauCodegenInteger2)
-            return translateBuiltinInt64MinMax(build, nparams, ra, arg, args, nresults, pcpos, false);
+            return translateBuiltinInt64MinMax(build, nparams, ra, arg, args, arg3, nresults, pcpos, false);
         return {BuiltinImplType::None, -1};
     case LBF_INTEGER_NEG:
         if (FFlag::LuauCodegenInteger2)
@@ -1985,7 +2033,7 @@ BuiltinImplResult translateBuiltin(
         return {BuiltinImplType::None, -1};
     case LBF_INTEGER_CLAMP:
         if (FFlag::LuauCodegenInteger2)
-            return translateBuiltinInt64Clamp(build, nparams, ra, arg, args, nresults, pcpos);
+            return translateBuiltinInt64Clamp(build, nparams, ra, arg, args, arg3, nresults, pcpos);
         return {BuiltinImplType::None, -1};
     case LBF_INTEGER_LT:
         if (FFlag::LuauCodegenInteger2)

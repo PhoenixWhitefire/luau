@@ -32,7 +32,6 @@
 
 LUAU_FASTFLAGVARIABLE(LuauTableFreezeCheckIsSubtype)
 LUAU_FASTFLAGVARIABLE(LuauSilenceDynamicFormatStringErrors)
-LUAU_FASTFLAGVARIABLE(LuauPcallCallbackCanReturnZeroValues)
 
 namespace Luau
 {
@@ -71,17 +70,6 @@ struct MagicAssert final : MagicFunction
 };
 
 struct MagicPack final : MagicFunction
-{
-    std::optional<WithPredicate<TypePackId>> handleOldSolver(
-        struct TypeChecker&,
-        const std::shared_ptr<struct Scope>&,
-        const class AstExprCall&,
-        WithPredicate<TypePackId>
-    ) override;
-    bool infer(const MagicFunctionCallContext& ctx) override;
-};
-
-struct MagicRequire final : MagicFunction
 {
     std::optional<WithPredicate<TypePackId>> handleOldSolver(
         struct TypeChecker&,
@@ -476,8 +464,7 @@ void registerBuiltinGlobals(Frontend& frontend, GlobalTypes& globals, bool typeC
     finalizeGlobalBindings(globals.globalScope);
 
     attachMagicFunction(getGlobalBinding(globals, "assert"), std::make_shared<MagicAssert>());
-    if (FFlag::LuauPcallCallbackCanReturnZeroValues)
-        attachMagicFunction(getGlobalBinding(globals, "pcall"), std::make_shared<MagicPcall>());
+    attachMagicFunction(getGlobalBinding(globals, "pcall"), std::make_shared<MagicPcall>());
 
     if (frontend.getLuauSolverMode() == SolverMode::New)
     {

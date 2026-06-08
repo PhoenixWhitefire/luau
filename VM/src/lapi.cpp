@@ -2,6 +2,7 @@
 // This code is based on Lua 5.x implementation licensed under MIT License; see lua_LICENSE.txt for details
 #include "lapi.h"
 
+#include "lobject.h"
 #include "lstate.h"
 #include "lstring.h"
 #include "ltable.h"
@@ -15,6 +16,8 @@
 #include "lbuffer.h"
 
 #include <string.h>
+
+LUAU_FASTFLAG(LuauDirectFieldGet)
 
 /*
  * This file contains most implementations of core Lua APIs from lua.h.
@@ -121,9 +124,16 @@ const TValue* luaA_toobject(lua_State* L, int idx)
     return (p == luaO_nilobject) ? NULL : p;
 }
 
-void luaA_pushobject(lua_State* L, const TValue* o)
+void luaA_pushvalue(lua_State* L, const TValue* o)
 {
     setobj2s(L, L->top, o);
+    api_incr_top(L);
+}
+
+void luaA_pushclass(lua_State* L, LuauClass* lco)
+{
+    api_check(L, lco != nullptr);
+    setclassvalue(L, L->top, lco);
     api_incr_top(L);
 }
 
@@ -883,6 +893,9 @@ int lua_getmetatable(lua_State* L, int objindex)
         break;
     case LUA_TUSERDATA:
         mt = uvalue(obj)->metatable;
+        break;
+    case LUA_TOBJECT:
+        mt = objectvalue(obj)->lclass->instancemetatable;
         break;
     default:
         mt = L->global->mt[ttype(obj)];
@@ -1742,4 +1755,63 @@ lua_Alloc lua_getallocf(lua_State* L, void** ud)
     if (ud)
         *ud = L->global->ud;
     return f;
+}
+
+void lua_registeruserdatadirectfieldget(lua_State* L, int tag, const char* field, lua_UserdataDirectFieldGet fn)
+{
+    if (!FFlag::LuauDirectFieldGet)
+        return;
+
+    api_check(L, unsigned(tag) < LUA_UTAG_LIMIT);
+    api_check(L, field != nullptr);
+    api_check(L, fn != nullptr);
+
+    global_State* g = L->global;
+
+    if (g->udatadirectfields[tag] == nullptr)
+        g->udatadirectfields[tag] = luaH_new(L, 0, 1);
+
+    TString* ts = luaS_new(L, field);
+    luaS_fix(ts);
+
+    TValue* slot = luaH_setstr(L, g->udatadirectfields[tag], ts);
+    setpvalue(slot, reinterpret_cast<void*>(fn), 0);
+}
+
+void lua_userdatadirectfield_setnumber(void* result, double n)
+{
+    LUAU_ASSERT(FFlag::LuauDirectFieldGet);
+    setnvalue(static_cast<TValue*>(result), n);
+}
+
+#if LUA_VECTOR_SIZE == 4
+void lua_userdatadirectfield_setvector(void* result, float x, float y, float z, float w)
+{
+    LUAU_ASSERT(FFlag::LuauDirectFieldGet);
+    setvvalue(static_cast<TValue*>(result), x, y, z, w);
+}
+#else
+void lua_userdatadirectfield_setvector(void* result, float x, float y, float z)
+{
+    LUAU_ASSERT(FFlag::LuauDirectFieldGet);
+    setvvalue(static_cast<TValue*>(result), x, y, z, 0);
+}
+#endif
+
+void lua_userdatadirectfield_setboolean(void* result, int b)
+{
+    LUAU_ASSERT(FFlag::LuauDirectFieldGet);
+    setbvalue(static_cast<TValue*>(result), b);
+}
+
+void lua_userdatadirectfield_setinteger64(void* result, int64_t n)
+{
+    LUAU_ASSERT(FFlag::LuauDirectFieldGet);
+    setlvalue(static_cast<TValue*>(result), n);
+}
+
+void lua_userdatadirectfield_setnil(void* result)
+{
+    LUAU_ASSERT(FFlag::LuauDirectFieldGet);
+    setnilvalue(static_cast<TValue*>(result));
 }

@@ -41,7 +41,9 @@ LUAU_FASTFLAGVARIABLE(DebugLuauForbidInternalTypes)
 LUAU_FASTFLAGVARIABLE(DebugLuauForceStrictMode)
 LUAU_FASTFLAGVARIABLE(DebugLuauForceNonStrictMode)
 LUAU_FASTFLAGVARIABLE(DebugLuauAlwaysShowConstraintSolvingIncomplete)
-LUAU_FASTFLAG(LuauOverloadGetsInstantiated2)
+LUAU_FASTFLAG(LuauConstraintGraph)
+LUAU_FASTFLAG(LuauExportValueSyntax)
+LUAU_FASTFLAGVARIABLE(LuauExportValueTypecheck)
 
 LUAU_FASTFLAGVARIABLE(DebugLuauForceOldSolver)
 
@@ -1505,6 +1507,13 @@ ModulePtr check(
 
     typeFunctionRuntime.allowEvaluation = true;
 
+    std::unique_ptr<ConstraintGraph> cgraph;
+    if (FFlag::LuauConstraintGraph)
+        cgraph = std::make_unique<ConstraintGraph>(builtinTypes);
+
+    Subtyping subtyping{builtinTypes, NotNull{&module->internalTypes}, NotNull{&normalizer}, NotNull{&typeFunctionRuntime}, iceHandler};
+
+
     ConstraintGenerator cg{
         module,
         NotNull{&normalizer},
@@ -1517,7 +1526,8 @@ ModulePtr check(
         std::move(prepareModuleScope),
         logger.get(),
         NotNull{&dfg},
-        requireCycles
+        requireCycles,
+        FFlag::LuauConstraintGraph ? cgraph.get() : nullptr,
     };
 
     ConstraintSet constraintSet = cg.run(sourceModule.root);
@@ -1533,8 +1543,11 @@ ModulePtr check(
         logger.get(),
         NotNull{&dfg},
         limits,
-        std::move(constraintSet)
+        std::move(constraintSet),
+        FFlag::LuauConstraintGraph ? cgraph.get() : nullptr,
+        NotNull{&subtyping}
     };
+
 
     if (options.randomizeConstraintResolutionSeed)
         cs.randomize(*options.randomizeConstraintResolutionSeed);
@@ -1620,6 +1633,9 @@ ModulePtr check(
         {
             module->cancelled = true;
         }
+
+        if (FFlag::LuauExportValueSyntax && FFlag::LuauExportValueTypecheck && !module->timeout && !module->cancelled)
+            synthesizeExportReturn(builtinTypes, NotNull{module.get()});
     }
 
     // if the only error we're producing is one about constraint solving being incomplete, we can silence it.
@@ -1629,32 +1645,16 @@ ModulePtr check(
         !FFlag::DebugLuauAlwaysShowConstraintSolvingIncomplete)
         module->errors.clear();
 
-    if (FFlag::LuauOverloadGetsInstantiated2)
-    {
-        ExpectedTypeVisitor etv{
-            NotNull{&module->astTypes},
-            NotNull{&module->astExpectedTypes},
-            NotNull{&module->astResolvedTypes},
-            NotNull{&module->astOverloadResolvedTypes},
-            NotNull{&module->internalTypes},
-            builtinTypes,
-            NotNull{parentScope.get()}
-        };
-        sourceModule.root->visit(&etv);
-    }
-    else
-    {
-
-        ExpectedTypeVisitor etv{
-            NotNull{&module->astTypes},
-            NotNull{&module->astExpectedTypes},
-            NotNull{&module->astResolvedTypes},
-            NotNull{&module->internalTypes},
-            builtinTypes,
-            NotNull{parentScope.get()}
-        };
-        sourceModule.root->visit(&etv);
-    }
+    ExpectedTypeVisitor etv{
+        NotNull{&module->astTypes},
+        NotNull{&module->astExpectedTypes},
+        NotNull{&module->astResolvedTypes},
+        NotNull{&module->astOverloadResolvedTypes},
+        NotNull{&module->internalTypes},
+        builtinTypes,
+        NotNull{parentScope.get()}
+    };
+    sourceModule.root->visit(&etv);
 
     // NOTE: This used to be done prior to cloning the public interface, but
     // we now replace "internal" types with `*error-type*`.
@@ -2088,6 +2088,10 @@ TypeId Frontend::parseType(
 
     DataFlowGraph dfg = DataFlowGraphBuilder::empty(NotNull{&module->defArena}, NotNull{&module->keyArena});
 
+    std::unique_ptr<ConstraintGraph> cgraph;
+    if (FFlag::LuauConstraintGraph)
+        cgraph = std::make_unique<ConstraintGraph>(builtinTypes);
+
     ConstraintGenerator cg{
         module,
         NotNull{&normalizer},
@@ -2100,7 +2104,8 @@ TypeId Frontend::parseType(
         nullptr,
         nullptr,
         NotNull{&dfg},
-        {}
+        {},
+        FFlag::LuauConstraintGraph ? cgraph.get() : nullptr
     };
 
     TypeId t = cg.resolveType(globals.globalScope, parseResult.root, false);

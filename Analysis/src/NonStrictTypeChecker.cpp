@@ -24,6 +24,7 @@ LUAU_FASTFLAG(DebugLuauMagicTypes)
 LUAU_FASTINTVARIABLE(LuauNonStrictTypeCheckerRecursionLimit, 300)
 LUAU_FASTFLAGVARIABLE(LuauAddRecursionCounterToNonStrictTypeChecker)
 LUAU_FASTFLAGVARIABLE(LuauNonStrictModeUseErrorSupressingTag)
+LUAU_FASTFLAG(DebugLuauUserDefinedClasses)
 
 namespace Luau
 {
@@ -235,7 +236,7 @@ struct NonStrictTypeChecker
         if (noTypeFunctionErrors.find(instance))
             return instance;
 
-        TypeFunctionContext context{arena, builtinTypes, stack.back(), NotNull{&normalizer}, typeFunctionRuntime, ice, limits};
+        TypeFunctionContext context{arena, builtinTypes, stack.back(), NotNull{&normalizer}, typeFunctionRuntime, ice, limits, NotNull{&subtyping}};
         ErrorVec errors = reduceTypeFunctions(instance, location, NotNull{&context}, true).errors;
 
         if (errors.empty())
@@ -301,6 +302,8 @@ struct NonStrictTypeChecker
         else if (auto s = stat->as<AstStatDeclareGlobal>())
             return visit(s);
         else if (auto s = stat->as<AstStatDeclareExternType>())
+            return visit(s);
+        else if (auto s = stat->as<AstStatClass>())
             return visit(s);
         else if (auto s = stat->as<AstStatError>())
             return visit(s);
@@ -498,6 +501,21 @@ struct NonStrictTypeChecker
 
         for (auto prop : declClass->props)
             visit(prop.ty);
+
+        return {};
+    }
+
+    NonStrictContext visit(AstStatClass* declClass)
+    {
+        for (auto prop : declClass->members)
+        {
+            if (auto property = get_if<AstClassProperty>(&prop))
+                visit(property->ty);
+            else if (auto method = get_if<AstClassMethod>(&prop))
+                visit(method->function);
+            else
+                LUAU_ASSERT(!"Unknown class field");
+        }
 
         return {};
     }
@@ -1216,10 +1234,10 @@ struct NonStrictTypeChecker
                     if (r.isSubtype && !r.isErrorSuppressing)
                         return {actualType};
                 }
-                else 
+                else
                 {
                     if (r.isSubtype)
-                       return {actualType};
+                        return {actualType};
                 }
             }
         }

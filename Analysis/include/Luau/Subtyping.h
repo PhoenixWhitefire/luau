@@ -40,6 +40,11 @@ struct SubtypingReasoning
     // The path, relative to the _root supertype_, where subtyping failed.
     Path superPath;
     SubtypingVariance variance = SubtypingVariance::Covariant;
+    // Set when the failure is due to a property modifier mismatch (e.g. the
+    // sub property is read-only or write-only but the super property requires
+    // read-write). In this case the leaf types at the path ends are the same,
+    // so a plain "X is not a subtype of X" message would be misleading.
+    bool isPropertyModifierViolation = false;
 
     bool operator==(const SubtypingReasoning& other) const;
 };
@@ -137,6 +142,7 @@ struct SubtypingResult
     SubtypingResult& withSuperPath(TypePath::Path path);
     SubtypingResult& withErrors(ErrorVec& err);
     SubtypingResult& withError(TypeError err);
+    SubtypingResult& withPropertyModifierViolation();
 
     SubtypingResult& withAssumedConstraint(ConstraintV constraint);
 
@@ -199,6 +205,8 @@ struct SubtypingEnvironment
 
     int iterationCount = 0;
 };
+
+struct TypeFunctionRuntime;
 
 struct Subtyping
 {
@@ -304,6 +312,15 @@ private:
         bool forceCovariantTest,
         NotNull<Scope> scope
     );
+
+    SubtypingResult isCovariantWith_DEPRECATED(
+        SubtypingEnvironment& env,
+        const TableType* subTable,
+        const TableType* superTable,
+        bool forceCovariantTest,
+        NotNull<Scope> scope
+    );
+
     SubtypingResult isCovariantWith(SubtypingEnvironment& env, const MetatableType* subMt, const MetatableType* superMt, NotNull<Scope> scope);
     SubtypingResult isCovariantWith(SubtypingEnvironment& env, const MetatableType* subMt, const TableType* superTable, NotNull<Scope> scope);
     SubtypingResult isCovariantWith(

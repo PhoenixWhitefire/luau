@@ -3,7 +3,6 @@
 
 #include "Luau/BytecodeBuilder.h"
 
-LUAU_FASTFLAGVARIABLE(LuauCompileExtraTypes)
 LUAU_FASTFLAG(LuauIntegerFastcalls)
 LUAU_FASTFLAGVARIABLE(LuauCompileTypeAliases)
 
@@ -170,11 +169,11 @@ static LuauBytecodeType getType(
     {
         return LBC_TYPE_NIL;
     }
-    else if (FFlag::LuauCompileExtraTypes && ty->is<AstTypeSingletonBool>())
+    else if (ty->is<AstTypeSingletonBool>())
     {
         return LBC_TYPE_BOOLEAN;
     }
-    else if (FFlag::LuauCompileExtraTypes && ty->is<AstTypeSingletonString>())
+    else if (ty->is<AstTypeSingletonString>())
     {
         return LBC_TYPE_STRING;
     }
@@ -205,10 +204,17 @@ static std::string getFunctionType(
     for (AstLocal* arg : func->args)
     {
         DenseHashSet<AstName> seenAliases{AstName()};
-        LuauBytecodeType ty =
-            arg->annotation
-                ? getType(arg->annotation, func->generics, typeAliases, /* resolveAliases_DEPRECATED= */ true, hostVectorType, userdataTypes, bytecode, seenAliases)
-                : LBC_TYPE_ANY;
+        LuauBytecodeType ty = arg->annotation ? getType(
+                                                    arg->annotation,
+                                                    func->generics,
+                                                    typeAliases,
+                                                    /* resolveAliases_DEPRECATED= */ true,
+                                                    hostVectorType,
+                                                    userdataTypes,
+                                                    bytecode,
+                                                    seenAliases
+                                                )
+                                              : LBC_TYPE_ANY;
 
         if (ty != LBC_TYPE_ANY)
             haveNonAnyParam = true;
@@ -350,7 +356,8 @@ struct TypeMapVisitor : AstVisitor
         resolvedExprs[expr] = ty;
 
         DenseHashSet<AstName> seenAliases{AstName()};
-        LuauBytecodeType bty = getType(ty, {}, typeAliases, /* resolveAliases_DEPRECATED= */ true, hostVectorType, userdataTypes, bytecode, seenAliases);
+        LuauBytecodeType bty =
+            getType(ty, {}, typeAliases, /* resolveAliases_DEPRECATED= */ true, hostVectorType, userdataTypes, bytecode, seenAliases);
         exprTypes[expr] = bty;
         return bty;
     }
@@ -362,7 +369,8 @@ struct TypeMapVisitor : AstVisitor
         resolvedLocals[local] = ty;
 
         DenseHashSet<AstName> seenAliases{AstName()};
-        LuauBytecodeType bty = getType(ty, {}, typeAliases, /* resolveAliases_DEPRECATED= */ true, hostVectorType, userdataTypes, bytecode, seenAliases);
+        LuauBytecodeType bty =
+            getType(ty, {}, typeAliases, /* resolveAliases_DEPRECATED= */ true, hostVectorType, userdataTypes, bytecode, seenAliases);
 
         if (bty != LBC_TYPE_ANY)
             localTypes[local] = bty;
@@ -399,8 +407,7 @@ struct TypeMapVisitor : AstVisitor
 
     bool visit(AstStatFor* node) override
     {
-        if (FFlag::LuauCompileExtraTypes)
-            recordResolvedType(node->var, &builtinTypes.numberType);
+        recordResolvedType(node->var, &builtinTypes.numberType);
 
         return true; // Let generic visitor step into all expressions
     }
@@ -458,7 +465,7 @@ struct TypeMapVisitor : AstVisitor
 
     bool visit(AstStatLocalFunction* node) override
     {
-        if (FFlag::LuauCompileExtraTypes && node->func->returnAnnotation != nullptr)
+        if (node->func->returnAnnotation != nullptr)
         {
             if (AstTypePackExplicit* type = node->func->returnAnnotation->as<AstTypePackExplicit>())
             {
@@ -562,7 +569,7 @@ struct TypeMapVisitor : AstVisitor
                     recordResolvedType(node, &builtinTypes.numberType);
                     return false;
                 }
-                else if (FFlag::LuauCompileExtraTypes && (node->index == "x" || node->index == "y" || node->index == "z"))
+                else if (node->index == "x" || node->index == "y" || node->index == "z")
                 {
                     recordResolvedType(node, &builtinTypes.numberType);
                     return false;
@@ -923,7 +930,7 @@ struct TypeMapVisitor : AstVisitor
                 break;
             }
         }
-        else if (FFlag::LuauCompileExtraTypes)
+        else
         {
             if (AstExprLocal* local = node->func->as<AstExprLocal>())
             {

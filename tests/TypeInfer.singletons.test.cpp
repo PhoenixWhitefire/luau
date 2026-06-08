@@ -8,9 +8,6 @@
 using namespace Luau;
 
 LUAU_FASTFLAG(DebugLuauForceOldSolver)
-LUAU_FASTFLAG(LuauMorePreciseErrorSuppression)
-LUAU_FASTFLAG(LuauOverloadGetsInstantiated2)
-LUAU_FASTFLAG(LuauReplacerRespectsReboundGenerics)
 
 TEST_SUITE_BEGIN("TypeSingletons");
 
@@ -217,7 +214,7 @@ TEST_CASE_FIXTURE(Fixture, "enums_using_singletons_mismatch")
 
     LUAU_REQUIRE_ERROR_COUNT(1, result);
 
-    if (!FFlag::DebugLuauForceOldSolver && FFlag::LuauMorePreciseErrorSuppression)
+    if (!FFlag::DebugLuauForceOldSolver)
     {
         // clang-format off
         const std::string expected =
@@ -231,8 +228,6 @@ TEST_CASE_FIXTURE(Fixture, "enums_using_singletons_mismatch")
 
         CHECK_LONG_STRINGS_EQ(expected, toString(result.errors[0]));
     }
-    else if (!FFlag::DebugLuauForceOldSolver)
-        CHECK("Expected this to be '\"bar\" | \"baz\" | \"foo\"', but got '\"bang\"'" == toString(result.errors[0]));
     else
         CHECK_EQ(
             "Expected this to be '\"bar\" | \"baz\" | \"foo\"', but got '\"bang\"'; none of the union options are compatible",
@@ -467,7 +462,7 @@ Table type 'a' not compatible with type 'Bad' because the former is missing fiel
 
 TEST_CASE_FIXTURE(Fixture, "parametric_tagged_union_alias")
 {
-    ScopedFastFlag _ {FFlag::DebugLuauForceOldSolver, false};
+    ScopedFastFlag _{FFlag::DebugLuauForceOldSolver, false};
 
     CheckResult result = check(R"(
         type Ok<T> = {success: true, result: T}
@@ -811,11 +806,7 @@ TEST_CASE_FIXTURE(Fixture, "oss_2018")
 
 TEST_CASE_FIXTURE(Fixture, "oss_2010_but_with_booleans")
 {
-    ScopedFastFlag sffs[] = {
-        {FFlag::DebugLuauForceOldSolver, false},
-        {FFlag::LuauReplacerRespectsReboundGenerics, true},
-        {FFlag::LuauOverloadGetsInstantiated2, true},
-    };
+    ScopedFastFlag _{FFlag::DebugLuauForceOldSolver, false};
 
     CheckResult results = check(R"(
         local function foo<T>(my_enum: true | T): T

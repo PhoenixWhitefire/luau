@@ -13,8 +13,6 @@
 #include "ltm.h"
 
 LUAU_FASTFLAG(LuauCodegenInteger2)
-LUAU_FASTFLAG(LuauCodegenDseOnCondJump)
-LUAU_FASTFLAG(LuauCodegenMarkDeadRegisters2)
 LUAU_FASTFLAGVARIABLE(LuauCodegenIntegerFastcall2k)
 LUAU_FASTFLAGVARIABLE(LuauCodegenStringNamecall)
 
@@ -1062,7 +1060,7 @@ IrOp translateFastCallN(IrBuilder& build, const Instruction* pc, int pcpos, bool
 
         if (nresults == LUA_MULTRET)
             build.inst(IrCmd::ADJUST_STACK_TO_REG, build.vmReg(ra), build.constInt(br.actualResultCount));
-        else if (FFlag::LuauCodegenMarkDeadRegisters2)
+        else
             build.inst(IrCmd::MARK_DEAD, build.vmReg(ra + 1), build.constInt(-1));
 
         if (br.type != BuiltinImplType::UsesFallback)
@@ -1223,11 +1221,8 @@ void translateInstForNLoop(IrBuilder& build, const Instruction* pc, int pcpos)
     {
         double stepN = build.function.doubleOp(stepK);
 
-        if (FFlag::LuauCodegenDseOnCondJump)
-        {
-            // Constant step optimization removes all the uses of the step register, but it has potential uses if a VM exit is taken
-            build.inst(IrCmd::MARK_USED, build.vmReg(ra + 1), build.constInt(1));
-        }
+        // Constant step optimization removes all the uses of the step register, but it has potential uses if a VM exit is taken
+        build.inst(IrCmd::MARK_USED, build.vmReg(ra + 1), build.constInt(1));
 
         // Condition to continue the loop: step > 0 ? idx <= limit : limit <= idx
         if (stepN > 0)
@@ -1781,7 +1776,7 @@ bool translateInstNamecall(IrBuilder& build, const Instruction* pc, int pcpos)
         if (build.hostHooks.vectorNamecall)
         {
             Instruction call = pc[2];
-            CODEGEN_ASSERT(LUAU_INSN_OP(call) == LOP_CALL);
+            CODEGEN_ASSERT(LUAU_INSN_OP(call) == LOP_CALLFB || LUAU_INSN_OP(call) == LOP_CALL);
 
             int callra = LUAU_INSN_A(call);
             int nparams = LUAU_INSN_B(call) - 1;
@@ -1850,7 +1845,7 @@ bool translateInstNamecall(IrBuilder& build, const Instruction* pc, int pcpos)
         if (build.hostHooks.userdataNamecall)
         {
             Instruction call = pc[2];
-            CODEGEN_ASSERT(LUAU_INSN_OP(call) == LOP_CALL);
+            CODEGEN_ASSERT(LUAU_INSN_OP(call) == LOP_CALLFB || LUAU_INSN_OP(call) == LOP_CALL);
 
             int callra = LUAU_INSN_A(call);
             int nparams = LUAU_INSN_B(call) - 1;
@@ -2002,6 +1997,29 @@ void translateInstNewClosure(IrBuilder& build, const Instruction* pc, int pcpos)
     }
 
     build.inst(IrCmd::CHECK_GC);
+}
+
+void translateInstCmpProto(IrBuilder& build, const Instruction* pc, int pcpos)
+{
+    int ra = LUAU_INSN_A(*pc);
+    uint32_t aux = pc[1];
+
+    IrOp target = build.blockAtInst(pcpos + 1 + LUAU_INSN_D(*pc));
+    IrOp next = build.blockAtInst(pcpos + 2);
+    IrOp checkFunId = build.block(IrBlockKind::Internal);
+
+    IrOp ta = build.inst(IrCmd::LOAD_TAG, build.vmReg(ra));
+    build.inst(IrCmd::JUMP_EQ_TAG, ta, build.constTag(LUA_TFUNCTION), checkFunId, target);
+
+    build.beginBlock(checkFunId);
+    IrOp ccl = build.inst(IrCmd::LOAD_POINTER, build.vmReg(ra));
+    IrOp vb = build.constUint(aux);
+
+    build.inst(IrCmd::JUMP_CMP_PROTOID, ccl, vb, next, target);
+
+    // Fallthrough in original bytecode is implicit, so we start next internal block here
+    if (build.isInternalBlock(next))
+        build.beginBlock(next);
 }
 
 } // namespace CodeGen

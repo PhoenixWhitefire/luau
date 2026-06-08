@@ -3,6 +3,7 @@
 
 #include "Luau/Ast.h"
 #include "Luau/Constraint.h"
+#include "Luau/ConstraintGraph.h"
 #include "Luau/ConstraintSet.h"
 #include "Luau/ControlFlow.h"
 #include "Luau/DataFlowGraph.h"
@@ -62,6 +63,12 @@ struct InferencePack
 struct Checkpoint
 {
     size_t offset = 0;
+};
+
+struct ClassDeclRecord
+{
+    AstStatClass* dataDecl = nullptr;
+    TypeId ty = nullptr;
 };
 
 struct ConstraintGenerator
@@ -137,9 +144,13 @@ struct ConstraintGenerator
 
     DenseHashMap<AstExpr*, Inference> inferredExprCache{nullptr};
 
+    DenseHashMap<AstLocal*, ClassDeclRecord> classDeclRecords{nullptr};
+
     DcrLogger* logger;
 
     bool recursionLimitMet = false;
+
+    ConstraintGraph* cgraph = nullptr;
 
     ConstraintGenerator(
         ModulePtr module,
@@ -153,7 +164,8 @@ struct ConstraintGenerator
         std::function<void(const ModuleName&, const ScopePtr&)> prepareModuleScope,
         DcrLogger* logger,
         NotNull<DataFlowGraph> dfg,
-        std::vector<RequireCycle> requireCycles
+        std::vector<RequireCycle> requireCycles,
+        ConstraintGraph* cgraph
     );
 
     ConstraintSet run(AstStatBlock* block);
@@ -267,7 +279,7 @@ private:
     );
     void applyRefinements(const ScopePtr& scope, Location location, RefinementId refinement);
 
-    LUAU_NOINLINE void checkAliases(const ScopePtr& scope, AstStatBlock* block);
+    LUAU_NOINLINE void prototypeTypeDefinitions(const ScopePtr& scope, AstStatBlock* block);
 
     ControlFlow visitBlockWithoutChildScope(const ScopePtr& scope, AstStatBlock* block);
 
@@ -289,6 +301,7 @@ private:
     ControlFlow visit(const ScopePtr& scope, AstStatDeclareGlobal* declareGlobal);
     ControlFlow visit(const ScopePtr& scope, AstStatDeclareExternType* declareExternType);
     ControlFlow visit(const ScopePtr& scope, AstStatDeclareFunction* declareFunction);
+    ControlFlow visit(const ScopePtr& scope, AstStatClass* statClass);
     ControlFlow visit(const ScopePtr& scope, AstStatError* error);
 
     InferencePack checkPack(const ScopePtr& scope, AstArray<AstExpr*> exprs, const std::vector<std::optional<TypeId>>& expectedTypes = {});
@@ -377,6 +390,7 @@ private:
 
     FunctionSignature checkFunctionSignature(
         const ScopePtr& parent,
+        ClassDeclRecord* enclosingClass,
         AstExprFunction* fn,
         std::optional<TypeId> expectedType = {},
         std::optional<Location> originalName = {}
@@ -442,15 +456,6 @@ private:
      * @return the type pack of the AST annotation.
      **/
     TypePackId resolveTypePack(
-        const ScopePtr& scope,
-        const AstTypeList& list,
-        bool inTypeArguments,
-        bool replaceErrorWithFresh = false,
-        Polarity initialPolarity = Polarity::Positive
-    );
-
-    // Clip with LuauForwardPolarityForFunctionTypes
-    TypePackId resolveTypePack_DEPRECATED(
         const ScopePtr& scope,
         const AstTypeList& list,
         bool inTypeArguments,

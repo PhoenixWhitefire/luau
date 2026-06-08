@@ -49,13 +49,15 @@ void luau_callhook(lua_State* L, lua_Hook hook, void* userdata);
 
 LUAU_FASTFLAG(DebugLuauAbortingChecks)
 LUAU_FASTINT(CodegenHeuristicsInstructionLimit)
-LUAU_FASTFLAG(LuauStacklessPcall)
+LUAU_FASTFLAG(LuauResumeRestoreCcalls)
 LUAU_FASTFLAG(LuauIntegerLibrary)
-LUAU_FASTFLAG(LuauIntegerType)
+LUAU_FASTFLAG(LuauIntegerType2)
 LUAU_FASTFLAG(DebugLuauForceOldSolver)
-LUAU_FASTFLAG(LuauNewMathConstantsRuntime)
-LUAU_FASTFLAG(LuauCompileStringInterpWithZero)
-LUAU_FASTFLAG(LuauUdataDirectAccess3)
+LUAU_FASTFLAG(LuauUdataDirectAccess6)
+LUAU_FASTFLAG(LuauCodegenBufferInteger)
+LUAU_FASTFLAG(LuauCodegenFixBufferLenCheck)
+LUAU_FASTFLAG(LuauYieldIter2)
+LUAU_FASTFLAG(DebugLuauUserDefinedClassesRuntime)
 
 #ifndef LUAU_CONFORMANCE_SOURCE_DIR
 // Walks up from the current directory looking for the Client folder,
@@ -296,8 +298,9 @@ static StateRef runConformance(
     luaL_register(L, nullptr, funcs.data());
     lua_pop(L, 1);
 
-    // In some configurations we have a larger C stack consumption which trips some conformance tests
-#if defined(LUAU_ENABLE_ASAN) || defined(_NOOPT) || defined(_DEBUG)
+    // In some configurations we have a larger C stack consumption which trips some conformance tests.
+    // On Android, process memory limits are tight enough that deep-recursion stress tests cause OOM kills.
+#if defined(LUAU_ENABLE_ASAN) || defined(_NOOPT) || defined(_DEBUG) || defined(__ANDROID__)
     lua_pushboolean(L, true);
     lua_setglobal(L, "limitedstack");
 #endif
@@ -555,6 +558,16 @@ static int lua_vec2_clone(lua_State* L, Vec2* self)
     return 1;
 }
 
+static int lua_vec2_reenter(lua_State* L, Vec2* self)
+{
+    lua_getglobal(L, "reenterCallback");
+    REQUIRE(lua_isfunction(L, -1));
+    lua_pcall(L, 0, 0, 0);
+
+    lua_pushnumber(L, self->x + self->y);
+    return 1;
+}
+
 static int lua_vec2_index(lua_State* L)
 {
     Vec2* v = lua_vec2_get(L, 1);
@@ -628,6 +641,9 @@ static int lua_vec2_namecall(lua_State* L)
 
         if (strcmp(str, "Clone") == 0)
             return lua_vec2_clone(L, self);
+
+        if (strcmp(str, "Reenter") == 0)
+            return lua_vec2_reenter(L, self);
     }
 
     luaL_error(L, "%s is not a valid method of vector", luaL_checkstring(L, 1));
@@ -910,6 +926,7 @@ enum class DirectSlot : uint16_t
     Dot,
     Min,
     Clone,
+    Reenter,
     Pos,
     Normal,
     UV,
@@ -924,6 +941,7 @@ const std::unordered_map<std::string, DirectSlot> nameToDirectSlot = {
     {"Dot", DirectSlot::Dot},
     {"Min", DirectSlot::Min},
     {"Clone", DirectSlot::Clone},
+    {"Reenter", DirectSlot::Reenter},
     {"pos", DirectSlot::Pos},
     {"normal", DirectSlot::Normal},
     {"uv", DirectSlot::UV},
@@ -1025,6 +1043,8 @@ static int vec2DirectNamecall(lua_State* L, void* data, int atom, uint16_t* cach
         return lua_vec2_min(L, self);
     case DirectSlot::Clone:
         return lua_vec2_clone(L, self);
+    case DirectSlot::Reenter:
+        return lua_vec2_reenter(L, self);
     default:
         luaL_error(L, "%s is not a valid method of vec2", lua_namecallatom(L, nullptr));
     }
@@ -1192,18 +1212,26 @@ TEST_CASE("Basic")
 
 TEST_CASE("Buffers")
 {
-    runConformance("buffers.luau");
+    runConformance(
+        "buffers.luau",
+        [](lua_State* L)
+        {
+            setupNativeHelpers(L);
+        }
+    );
 }
 
 TEST_CASE("Math")
 {
-    ScopedFastFlag newMathConstants{FFlag::LuauNewMathConstantsRuntime, true};
     runConformance("math.luau");
 }
 
 TEST_CASE("Integers")
 {
-    if (FFlag::LuauIntegerType && FFlag::LuauIntegerLibrary)
+    ScopedFastFlag ncgBufferInteger{FFlag::LuauCodegenBufferInteger, true};
+    ScopedFastFlag luauCodegenFixBufferLenCheck{FFlag::LuauCodegenFixBufferLenCheck, true};
+
+    if (FFlag::LuauIntegerType2 && FFlag::LuauIntegerLibrary)
     {
         runConformance(
             "integers.luau",
@@ -1213,18 +1241,17 @@ TEST_CASE("Integers")
             }
         );
 
-	if (codegen && luau_codegen_supported())
-	{
-        runConformance(
-            "integers_regspill.luau",
+        if (codegen && luau_codegen_supported())
+        {
+            runConformance(
+                "integers_regspill.luau",
 
-            [](lua_State* L)
-            {
-                setupNativeHelpers(L);
-            }
-        );
-
-	}
+                [](lua_State* L)
+                {
+                    setupNativeHelpers(L);
+                }
+            );
+        }
     }
 }
 
@@ -1287,8 +1314,6 @@ TEST_CASE("Strings")
 
 TEST_CASE("StringInterp")
 {
-    ScopedFastFlag luauCompileStringInterpWithZero{FFlag::LuauCompileStringInterpWithZero, true};
-
     runConformance("stringinterp.luau");
 }
 
@@ -1309,8 +1334,6 @@ TEST_CASE("Literals")
 
 TEST_CASE("Errors")
 {
-    ScopedFastFlag luauStacklessPcall{FFlag::LuauStacklessPcall, true};
-
     runConformance("errors.luau");
 }
 
@@ -1407,7 +1430,7 @@ static int cxxthrow(lua_State* L)
 
 TEST_CASE("PCall")
 {
-    ScopedFastFlag luauStacklessPcall{FFlag::LuauStacklessPcall, true};
+    ScopedFastFlag luauResumeRestoreCcalls{FFlag::LuauResumeRestoreCcalls, true};
 
     runConformance(
         "pcall.luau",
@@ -1641,6 +1664,8 @@ int passthroughCallWithStateContinuation(lua_State* L, int status)
 
 TEST_CASE("CYield")
 {
+    ScopedFastFlag luauResumeRestoreCcalls{FFlag::LuauResumeRestoreCcalls, true};
+
     runConformance(
         "cyield.luau",
         [](lua_State* L)
@@ -1776,7 +1801,7 @@ static void populateRTTI(lua_State* L, Luau::TypeId type)
             break;
 
         case Luau::PrimitiveType::Integer:
-            if (FFlag::LuauIntegerType)
+            if (FFlag::LuauIntegerType2)
                 lua_pushstring(L, "integer");
             break;
 
@@ -3592,9 +3617,40 @@ TEST_CASE("DebugApi")
     CHECK(lua_getinfo(L, -10, "f", &ar) == 0); // not on stack
 }
 
+static int cYieldingIteratorContinuation(lua_State* L, int status)
+{
+    int index = luaL_checkinteger(L, 2);
+    lua_pushinteger(L, index + 1);
+    lua_pushinteger(L, index + 1);
+    return 2;
+}
+
+static int cYieldingIterator(lua_State* L)
+{
+    int max = luaL_checkinteger(L, 1);
+    int index = luaL_checkinteger(L, 2);
+
+    if (index >= max)
+        return 0; // nil: end iteration
+
+    lua_pushinteger(L, index + 1);
+    return lua_yield(L, 1);
+}
+
 TEST_CASE("Iter")
 {
-    runConformance("iter.luau");
+    ScopedFastFlag luauYieldIter{FFlag::LuauYieldIter2, true};
+
+    runConformance(
+        "iter.luau",
+        [](lua_State* L)
+        {
+            setupNativeHelpers(L);
+
+            lua_pushcclosurek(L, cYieldingIterator, "cYieldingIterator", 0, cYieldingIteratorContinuation);
+            lua_setglobal(L, "cYieldingIterator");
+        }
+    );
 }
 
 TEST_CASE("IterFenv")
@@ -3855,6 +3911,8 @@ TEST_CASE("SafeEnv")
 
 TEST_CASE("Native")
 {
+    ScopedFastFlag luauCodegenFixBufferLenCheck{FFlag::LuauCodegenFixBufferLenCheck, true};
+
     // This tests requires code to run natively, otherwise all 'is_native' checks will fail
     if (!codegen || !luau_codegen_supported())
         return;
@@ -4038,7 +4096,7 @@ TEST_CASE("NativeUserdata")
 
 TEST_CASE("UserdataDirectAccess")
 {
-    ScopedFastFlag sff{FFlag::LuauUdataDirectAccess3, true};
+    ScopedFastFlag sff{FFlag::LuauUdataDirectAccess6, true};
 
     // Reset global state
     nameToAtom.clear();
@@ -4072,6 +4130,16 @@ TEST_CASE("UserdataDirectAccess")
             }
         }
     );
+}
+
+TEST_CASE("Classes")
+{
+    ScopedFastFlag sffs[] = {
+        {FFlag::DebugLuauUserDefinedClasses, true},
+        {FFlag::DebugLuauUserDefinedClassesRuntime, true},
+    };
+
+    runConformance("classes.luau");
 }
 
 [[nodiscard]] static std::string makeHugeFunctionSource()
@@ -4385,32 +4453,56 @@ local function second(x)
 end
 )";
 
+    auto totalCount = [](const Luau::CodeGen::FunctionBytecodeSummary& summary)
+    {
+        unsigned total = 0;
+        for (unsigned c : summary.getCounts(0))
+            total += c;
+        return total;
+    };
+
     std::vector<Luau::CodeGen::FunctionBytecodeSummary> summaries(analyzeFile(source, 0, 1));
 
     CHECK_EQ(summaries[0].getName(), "inner");
     CHECK_EQ(summaries[0].getLine(), 6);
-    CHECK_EQ(summaries[0].getCounts(0), std::vector<unsigned>({0, 0, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 0, 0, 0, 0, 0, 0,
-                                                               0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                                                               0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}));
+    CHECK_EQ(summaries[0].getCount(0, LOP_LOADN), 1);
+    CHECK_EQ(summaries[0].getCount(0, LOP_MOVE), 1);
+    CHECK_EQ(summaries[0].getCount(0, LOP_GETUPVAL), 1);
+    CHECK_EQ(summaries[0].getCount(0, LOP_GETIMPORT), 1);
+    CHECK_EQ(summaries[0].getCount(0, LOP_CALL), 1);
+    CHECK_EQ(summaries[0].getCount(0, LOP_RETURN), 2);
+    CHECK_EQ(summaries[0].getCount(0, LOP_JUMPIFNOTLT), 1);
+    CHECK_EQ(summaries[0].getCount(0, LOP_SUBK), 1);
+    CHECK_EQ(summaries[0].getCount(0, LOP_FASTCALL1), 1);
+    CHECK_EQ(totalCount(summaries[0]), 10u);
 
     CHECK_EQ(summaries[1].getName(), "first");
     CHECK_EQ(summaries[1].getLine(), 2);
-    CHECK_EQ(summaries[1].getCounts(0), std::vector<unsigned>({0, 0, 1, 0, 2, 0, 3, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0,
-                                                               0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 1,
-                                                               0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}));
-
+    CHECK_EQ(summaries[1].getCount(0, LOP_LOADNIL), 1);
+    CHECK_EQ(summaries[1].getCount(0, LOP_LOADN), 2);
+    CHECK_EQ(summaries[1].getCount(0, LOP_MOVE), 3);
+    CHECK_EQ(summaries[1].getCount(0, LOP_SETTABLE), 1);
+    CHECK_EQ(summaries[1].getCount(0, LOP_NEWCLOSURE), 1);
+    CHECK_EQ(summaries[1].getCount(0, LOP_RETURN), 1);
+    CHECK_EQ(summaries[1].getCount(0, LOP_MULK), 1);
+    CHECK_EQ(summaries[1].getCount(0, LOP_NEWTABLE), 1);
+    CHECK_EQ(summaries[1].getCount(0, LOP_FORNPREP), 1);
+    CHECK_EQ(summaries[1].getCount(0, LOP_FORNLOOP), 1);
+    CHECK_EQ(summaries[1].getCount(0, LOP_CAPTURE), 1);
+    CHECK_EQ(totalCount(summaries[1]), 14u);
 
     CHECK_EQ(summaries[2].getName(), "second");
     CHECK_EQ(summaries[2].getLine(), 15);
-    CHECK_EQ(summaries[2].getCounts(0), std::vector<unsigned>({0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0,
-                                                               0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                                                               0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}));
+    CHECK_EQ(summaries[2].getCount(0, LOP_GETTABLEN), 1);
+    CHECK_EQ(summaries[2].getCount(0, LOP_RETURN), 1);
+    CHECK_EQ(totalCount(summaries[2]), 2u);
 
     CHECK_EQ(summaries[3].getName(), "");
     CHECK_EQ(summaries[3].getLine(), 1);
-    CHECK_EQ(summaries[3].getCounts(0), std::vector<unsigned>({0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0,
-                                                               0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                                                               0, 0, 0, 0, 0, 0, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}));
+    CHECK_EQ(summaries[3].getCount(0, LOP_RETURN), 1);
+    CHECK_EQ(summaries[3].getCount(0, LOP_DUPCLOSURE), 2);
+    CHECK_EQ(summaries[3].getCount(0, LOP_PREPVARARGS), 1);
+    CHECK_EQ(totalCount(summaries[3]), 4u);
 }
 
 TEST_CASE("NativeAttribute")
@@ -4462,6 +4554,117 @@ TEST_CASE("NativeAttribute")
 
     // We should be able to compile at least one of our functions
     CHECK_EQ(nativeStats.functionsCompiled, 2);
+}
+
+// Without nopPadding, two compilations of the same source must
+// produce identical native code (output is fully deterministic).
+// This test will be extended to all flags that control codegen randomization.
+TEST_CASE("CodegenNopPaddingDeterministicOff")
+{
+    if (!codegen || !luau_codegen_supported())
+        return;
+
+    const char* source = R"(
+        local function add(a, b) return a + b end
+        return add(1, 2)
+    )";
+
+    auto compile = [&]() -> size_t
+    {
+        StateRef globalState(luaL_newstate(), lua_close);
+        lua_State* L = globalState.get();
+        luau_codegen_create(L);
+
+        size_t bytecodeSize = 0;
+        char* bytecode = luau_compile(source, strlen(source), nullptr, &bytecodeSize);
+        int result = luau_load(L, "=test", bytecode, bytecodeSize, 0);
+        free(bytecode);
+        REQUIRE(result == 0);
+
+        Luau::CodeGen::CompilationStats stats = {};
+        Luau::CodeGen::compile(L, -1, Luau::CodeGen::CompilationOptions{}, &stats);
+        return stats.nativeCodeSizeBytes;
+    };
+
+    CHECK(compile() == compile());
+}
+
+// With LuauCodegenNopPadding enabled, the native code size must be >= the size
+// produced without it (NOP sleds only ever add bytes, never remove them).
+TEST_CASE("CodegenRandomizeCodeSizeNonDecreasing")
+{
+    if (!codegen || !luau_codegen_supported())
+        return;
+
+    // Multiple branches give the NOP padding more opportunities to fire.
+    const char* source = R"(
+        local function classify(x)
+            if x > 0 then
+                return "positive"
+            elseif x < 0 then
+                return "negative"
+            else
+                return "zero"
+            end
+        end
+        return classify(1)
+    )";
+
+    auto compile = [&](bool nopPadding) -> size_t
+    {
+        StateRef globalState(luaL_newstate(), lua_close);
+        lua_State* L = globalState.get();
+        luau_codegen_create(L);
+
+        size_t bytecodeSize = 0;
+        char* bytecode = luau_compile(source, strlen(source), nullptr, &bytecodeSize);
+        int result = luau_load(L, "=test", bytecode, bytecodeSize, 0);
+        free(bytecode);
+        REQUIRE(result == 0);
+
+        Luau::CodeGen::CompilationOptions options{};
+        options.nopPadding = nopPadding;
+        Luau::CodeGen::CompilationStats stats = {};
+        Luau::CodeGen::compile(L, -1, options, &stats);
+        return stats.nativeCodeSizeBytes;
+    };
+
+    CHECK(compile(true) >= compile(false));
+}
+
+// Code compiled with LuauCodegenNopPadding must still execute correctly.
+// This test will be extended to all flags that control codegen randomization.
+TEST_CASE("CodegenRandomizeFunctionalCorrectness")
+{
+    if (!codegen || !luau_codegen_supported())
+        return;
+
+    const char* source = R"(
+        local function add(a, b) return a + b end
+        return add(10, 32)
+    )";
+
+    StateRef globalState(luaL_newstate(), lua_close);
+    lua_State* L = globalState.get();
+    luau_codegen_create(L);
+    luaL_openlibs(L);
+    luaL_sandbox(L);
+    luaL_sandboxthread(L);
+
+    size_t bytecodeSize = 0;
+    char* bytecode = luau_compile(source, strlen(source), nullptr, &bytecodeSize);
+    int loadResult = luau_load(L, "=test", bytecode, bytecodeSize, 0);
+    free(bytecode);
+    REQUIRE(loadResult == 0);
+
+    Luau::CodeGen::CompilationOptions nopOptions{};
+    nopOptions.nopPadding = true;
+    Luau::CodeGen::compile(L, -1, nopOptions);
+
+    int callResult = lua_pcall(L, 0, 1, 0);
+    REQUIRE_MESSAGE(callResult == 0, lua_tostring(L, -1));
+
+    CHECK(lua_tonumber(L, -1) == 42.0);
 }
 
 TEST_SUITE_END();
