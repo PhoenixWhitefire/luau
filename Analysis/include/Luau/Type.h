@@ -414,14 +414,16 @@ enum class TableState
 
 struct TableIndexer
 {
-    TableIndexer(TypeId indexType, TypeId indexResultType)
+    TableIndexer(TypeId indexType, TypeId indexResultType, bool isReadOnly = false)
         : indexType(indexType)
         , indexResultType(indexResultType)
+        , isReadOnly(isReadOnly)
     {
     }
 
     TypeId indexType;
     TypeId indexResultType;
+    bool isReadOnly = false;
 };
 
 struct Property
@@ -541,6 +543,18 @@ struct ClassUserData
     virtual ~ClassUserData() {}
 };
 
+struct Obj
+{
+    TypeId ty;
+};
+
+struct Klass
+{
+    TypeId ty;
+};
+
+using NominalRelation = Variant<Obj, Klass>;
+
 /** The type of an external userdata exposed to Luau.
  *
  * Extern types behave like tables in many ways, but there are some important differences:
@@ -562,6 +576,13 @@ struct ExternType
     ModuleName definitionModuleName;
     std::optional<Location> definitionLocation;
     std::optional<TableIndexer> indexer;
+    /* This field represents a bidirectional relationship between classes and object types
+       Given a Class, this relation should be a Obj in the variant, representing an instantiation of the class
+       Given a Object, this relation should be a Klass in the variant, representing the class prototype
+       Other sources of Extern Types will not have this relation set - this is for the classes fixture so that
+       we can go between class and object easily, given just the extern type
+     */
+    std::optional<NominalRelation> relation;
 
     ExternType(
         Name name,
@@ -1012,6 +1033,8 @@ public:
     const TypeId bufferType;
     const TypeId functionType;
     const TypeId externType;
+    const TypeId objectType;
+    const TypeId classType;
     const TypeId tableType;
     const TypeId emptyTableType;
     const TypeId trueType;

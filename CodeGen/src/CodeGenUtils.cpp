@@ -19,6 +19,8 @@
 #include <string.h>
 
 LUAU_FASTFLAGVARIABLE(LuauNativeCodeTargetCheck)
+LUAU_FASTFLAG(LuauDirectFieldGet)
+LUAU_FASTFLAG(LuauClosureUsageCounter)
 
 // All external function calls that can cause stack realloc or Lua calls have to be wrapped in VM_PROTECT
 // This makes sure that we save the pc (in case the Lua call needs to generate a backtrace) before the call,
@@ -131,7 +133,35 @@ bool forgLoopNodeIter(lua_State* L, LuaTable* h, int index, TValue* ra)
     return false;
 }
 
-bool forgLoopNonTableFallback(lua_State* L, int insnA, int aux)
+int forgLoopNonTableFallback(lua_State* L, int insnA, int aux)
+{
+    TValue* base = L->base;
+    TValue* ra = VM_REG(insnA);
+
+    // note: it's safe to push arguments past top for complicated reasons (see lvmexecute.cpp)
+    setobj2s(L, ra + 3 + 2, ra + 2);
+    setobj2s(L, ra + 3 + 1, ra + 1);
+    setobj2s(L, ra + 3, ra);
+
+    L->top = ra + 3 + 3; // func + 2 args (state and index)
+    LUAU_ASSERT(L->top <= L->stack_last);
+
+    if (luaD_performcally(L, ra + 3, uint8_t(aux)))
+        return -1; // yield/break, caller must exit native execution
+
+    L->top = L->ci->top;
+
+    // recompute ra since stack might have been reallocated
+    base = L->base;
+    ra = VM_REG(insnA);
+
+    // copy first variable back into the iteration index
+    setobj2s(L, ra + 2, ra + 3);
+
+    return ttisnil(ra + 3) ? 0 : 1;
+}
+
+bool forgLoopNonTableFallback_DEPRECATED(lua_State* L, int insnA, int aux)
 {
     TValue* base = L->base;
     TValue* ra = VM_REG(insnA);
@@ -186,6 +216,8 @@ Closure* callProlog(lua_State* L, TValue* ra, StkId argtop, int nresults)
     ci->savedpc = NULL;
     ci->flags = 0;
     ci->nresults = nresults;
+    if (FFlag::LuauClosureUsageCounter)
+        ccl->usage++;
 
     L->base = ci->base;
     L->top = argtop;
@@ -203,6 +235,12 @@ void callEpilogC(lua_State* L, int nresults, int n)
     // ci is our callinfo, cip is our parent
     CallInfo* ci = L->ci;
     CallInfo* cip = ci - 1;
+
+    if (FFlag::LuauClosureUsageCounter)
+    {
+        LUAU_ASSERT(clvalue(ci->func)->usage > 0);
+        clvalue(ci->func)->usage--;
+    }
 
     // copy return values into parent stack (but only up to nresults!), fill the rest with nil
     // note: in MULTRET context nresults starts as -1 so i != 0 condition never activates intentionally
@@ -257,6 +295,9 @@ Closure* callFallback(lua_State* L, StkId ra, StkId argtop, int nresults)
 
     Closure* ccl = clvalue(ra);
 
+    if (FFlag::LuauClosureUsageCounter)
+        ccl->usage++;
+
     CallInfo* ci = incr_ci(L);
     ci->func = ra;
     ci->base = ra + 1;
@@ -306,6 +347,12 @@ Closure* callFallback(lua_State* L, StkId ra, StkId argtop, int nresults)
         // ci is our callinfo, cip is our parent
         CallInfo* ci = L->ci;
         CallInfo* cip = ci - 1;
+
+        if (FFlag::LuauClosureUsageCounter)
+        {
+            LUAU_ASSERT(ccl->usage > 0);
+            ccl->usage--;
+        }
 
         // copy return values into parent stack (but only up to nresults!), fill the rest with nil
         // note: in MULTRET context nresults starts as -1 so i != 0 condition never activates intentionally
@@ -379,10 +426,11 @@ const Instruction* executeGETTABLEKS(lua_State* L, const Instruction* pc, StkId 
 {
     [[maybe_unused]] Closure* cl = clvalue(L->ci->func);
     Instruction insn = *pc++;
+    int op = LUAU_INSN_OP(insn);
     StkId ra = VM_REG(LUAU_INSN_A(insn));
     StkId rb = VM_REG(LUAU_INSN_B(insn));
     uint32_t aux = *pc++;
-    TValue* kv = VM_KV(aux);
+    TValue* kv = VM_KV(op == LOP_GETUDATAKS ? LUAU_INSN_AUX_KV16(aux) : aux);
     LUAU_ASSERT(ttisstring(kv));
 
     // fast-path: built-in table
@@ -420,6 +468,36 @@ const Instruction* executeGETTABLEKS(lua_State* L, const Instruction* pc, StkId 
     }
     else
     {
+        // fast-path: registered direct field handler
+        if (FFlag::LuauDirectFieldGet && ttisuserdata(rb))
+        {
+            LuaTable* dispatch = L->global->udatadirectfields[uvalue(rb)->tag];
+            if (dispatch)
+            {
+                int slot = LUAU_INSN_C(insn) & dispatch->nodemask8;
+                LuaNode* n = &dispatch->node[slot];
+
+                if (LUAU_LIKELY(ttisstring(gkey(n)) && tsvalue(gkey(n)) == tsvalue(kv) && !ttisnil(gval(n))))
+                {
+                    lua_UserdataDirectFieldGet fn = reinterpret_cast<lua_UserdataDirectFieldGet>(pvalue(gval(n)));
+                    fn(uvalue(rb)->data, ra);
+                    return pc;
+                }
+
+                const TValue* fptr = luaH_getstr(dispatch, tsvalue(kv));
+                if (!ttisnil(fptr))
+                {
+                    // cache slot for future lookups
+                    VM_PATCH_C(pc - 2, gval2slot(dispatch, fptr));
+                    lua_UserdataDirectFieldGet fn = reinterpret_cast<lua_UserdataDirectFieldGet>(pvalue(fptr));
+                    fn(uvalue(rb)->data, ra);
+                    return pc;
+                }
+            }
+
+            // fall through to slow path
+        }
+
         // fast-path: user data with C __index TM
         const TValue* fn = 0;
         if (ttisuserdata(rb) && (fn = fasttm(L, uvalue(rb)->metatable, TM_INDEX)) && ttisfunction(fn) && clvalue(fn)->isC)
@@ -491,10 +569,11 @@ const Instruction* executeSETTABLEKS(lua_State* L, const Instruction* pc, StkId 
 {
     [[maybe_unused]] Closure* cl = clvalue(L->ci->func);
     Instruction insn = *pc++;
+    int op = LUAU_INSN_OP(insn);
     StkId ra = VM_REG(LUAU_INSN_A(insn));
     StkId rb = VM_REG(LUAU_INSN_B(insn));
     uint32_t aux = *pc++;
-    TValue* kv = VM_KV(aux);
+    TValue* kv = VM_KV(op == LOP_SETUDATAKS ? LUAU_INSN_AUX_KV16(aux) : aux);
     LUAU_ASSERT(ttisstring(kv));
 
     // fast-path: built-in table
@@ -561,10 +640,11 @@ const Instruction* executeNAMECALL(lua_State* L, const Instruction* pc, StkId ba
 {
     [[maybe_unused]] Closure* cl = clvalue(L->ci->func);
     Instruction insn = *pc++;
+    int op = LUAU_INSN_OP(insn);
     StkId ra = VM_REG(LUAU_INSN_A(insn));
     StkId rb = VM_REG(LUAU_INSN_B(insn));
     uint32_t aux = *pc++;
-    TValue* kv = VM_KV(aux);
+    TValue* kv = VM_KV(op == LOP_NAMECALLUDATA ? LUAU_INSN_AUX_KV16(aux) : aux);
     LUAU_ASSERT(ttisstring(kv));
 
     if (ttistable(rb))
@@ -637,7 +717,7 @@ const Instruction* executeNAMECALL(lua_State* L, const Instruction* pc, StkId ba
     }
 
     // intentional fallthrough to CALL
-    LUAU_ASSERT(LUAU_INSN_OP(*pc) == LOP_CALL);
+    LUAU_ASSERT(LUAU_INSN_OP(*pc) == LOP_CALL || LUAU_INSN_OP(*pc) == LOP_CALLFB);
     return pc;
 }
 

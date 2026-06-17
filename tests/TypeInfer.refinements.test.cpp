@@ -11,10 +11,6 @@
 LUAU_FASTFLAG(DebugLuauForceOldSolver)
 LUAU_FASTFLAG(LuauFunctionCallsAreNotNilable)
 LUAU_FASTFLAG(DebugLuauAssertOnForcedConstraint)
-LUAU_FASTFLAG(LuauTypeCheckerUdtfRenameClassToExtern)
-LUAU_FASTFLAG(LuauExternTypesNormalizeWithShapes)
-LUAU_FASTFLAG(LuauUseConstraintSetsToTrackFreeTypes)
-LUAU_FASTFLAG(LuauRefinementTypeVector)
 
 using namespace Luau;
 
@@ -783,12 +779,7 @@ TEST_CASE_FIXTURE(BuiltinsFixture, "type_narrow_to_vector")
     LUAU_REQUIRE_NO_ERRORS(result);
 
     if (!FFlag::DebugLuauForceOldSolver)
-    {
-        if (FFlag::LuauRefinementTypeVector)
-            CHECK_EQ("unknown & vector", toString(requireTypeAtPosition({3, 28})));
-        else
-            CHECK_EQ("never", toString(requireTypeAtPosition({3, 28})));
-    }
+        CHECK_EQ("unknown & vector", toString(requireTypeAtPosition({3, 28})));
     else
         CHECK_EQ("*error-type*", toString(requireTypeAtPosition({3, 28})));
 }
@@ -797,7 +788,6 @@ TEST_CASE_FIXTURE(BuiltinsFixture, "nonoptional_type_can_narrow_to_nil_if_sense_
 {
     ScopedFastFlag sffs[] = {
         {FFlag::DebugLuauAssertOnForcedConstraint, true},
-        {FFlag::LuauUseConstraintSetsToTrackFreeTypes, true},
     };
 
     CheckResult result = check(R"(
@@ -1686,7 +1676,7 @@ TEST_CASE_FIXTURE(RefinementExternTypeFixture, "asserting_optional_properties_sh
 
     LUAU_REQUIRE_NO_ERRORS(result);
 
-    if (!FFlag::DebugLuauForceOldSolver && FFlag::LuauExternTypesNormalizeWithShapes)
+    if (!FFlag::DebugLuauForceOldSolver)
         CHECK_EQ("WeldConstraint & { read Part1: ~(false?) }", toString(requireTypeAtPosition({3, 15})));
     else
         CHECK_EQ("WeldConstraint", toString(requireTypeAtPosition({3, 15})));
@@ -1695,8 +1685,6 @@ TEST_CASE_FIXTURE(RefinementExternTypeFixture, "asserting_optional_properties_sh
 
 TEST_CASE_FIXTURE(RefinementExternTypeFixture, "asserting_non_existent_properties_should_not_refine_extern_types_to_never")
 {
-    ScopedFastFlag sff = {FFlag::LuauTypeCheckerUdtfRenameClassToExtern, true};
-
     CheckResult result = check(R"(
         local weld: WeldConstraint = nil :: any
         assert(weld.Part8)
@@ -2920,10 +2908,7 @@ TEST_CASE_FIXTURE(BuiltinsFixture, "refinements_from_and_should_not_refine_to_ne
 
     LUAU_REQUIRE_NO_ERRORS(results);
 
-    if (FFlag::LuauExternTypesNormalizeWithShapes)
-        CHECK_EQ("(Config & { read KeyboardEnabled: false? }) | (Config & { read MouseEnabled: false? })", toString(requireTypeAtPosition({6, 24})));
-    else
-        CHECK_EQ("Config", toString(requireTypeAtPosition({6, 24})));
+    CHECK_EQ("(Config & { read KeyboardEnabled: false? }) | (Config & { read MouseEnabled: false? })", toString(requireTypeAtPosition({6, 24})));
 }
 
 TEST_CASE_FIXTURE(Fixture, "force_simplify_constraint_doesnt_drop_blocked_type")
@@ -3229,10 +3214,7 @@ TEST_CASE_FIXTURE(Fixture, "cli_184413_refinement_of_union_of_read_types_is_read
 
 TEST_CASE_FIXTURE(BuiltinsFixture, "type_vector_refine")
 {
-    ScopedFastFlag _[] = {
-        {FFlag::DebugLuauForceOldSolver, false},
-        {FFlag::LuauRefinementTypeVector, true}
-    };
+    ScopedFastFlag _[] = {{FFlag::DebugLuauForceOldSolver, false}};
 
     CheckResult result = check(R"(
         function foo(x: unknown)

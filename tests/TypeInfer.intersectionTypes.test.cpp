@@ -10,8 +10,8 @@
 using namespace Luau;
 
 LUAU_FASTFLAG(LuauCheckFunctionStatementTypes)
-LUAU_FASTFLAG(LuauMorePreciseErrorSuppression)
 LUAU_FASTFLAG(DebugLuauForceOldSolver)
+LUAU_FASTFLAG(LuauPropagateFreeTypesIntoUnionAndIntersectionBounds)
 
 TEST_SUITE_BEGIN("IntersectionTypes");
 
@@ -568,7 +568,7 @@ TEST_CASE_FIXTURE(Fixture, "intersect_saturate_overloaded_functions")
         end
     )");
 
-    if (!FFlag::DebugLuauForceOldSolver && FFlag::LuauMorePreciseErrorSuppression)
+    if (!FFlag::DebugLuauForceOldSolver)
     {
         // clang-format off
         const std::string expected1 =
@@ -596,43 +596,6 @@ TEST_CASE_FIXTURE(Fixture, "intersect_saturate_overloaded_functions")
 
         CHECK_LONG_STRINGS_EQ(expected1, toString(result.errors.at(0)));
         CHECK_LONG_STRINGS_EQ(expected2, toString(result.errors.at(1)));
-    }
-    else if (!FFlag::DebugLuauForceOldSolver)
-    {
-        const std::string expected1 =
-            "Expected this to be\n\t"
-            "'(nil) -> nil'"
-            "\nbut got\n\t"
-            "'((number?) -> number?) & ((string?) -> string?)'"
-            "; \nthis is because \n\t"
-            " * in the 1st component of the intersection, the function returns the 1st entry in the type pack which has the 1st component of "
-            "the "
-            "union as `number` and it returns the 1st entry in the type pack is `nil`, and `number` is not a subtype of `nil`\n\t"
-            " * in the 2nd component of the intersection, the function returns the 1st entry in the type pack which has the 1st component of "
-            "the "
-            "union as `string` and it returns the 1st entry in the type pack is `nil`, and `string` is not a subtype of `nil`";
-
-        const std::string expected2 =
-            "Expected this to be\n\t"
-            "'(number) -> number'"
-            "\nbut got\n\t"
-            "'((number?) -> number?) & ((string?) -> string?)'"
-            "; \nthis is because \n\t"
-            " * in the 1st component of the intersection, the function returns the 1st entry in the type pack which has the 2nd component of "
-            "the "
-            "union as `nil` and it returns the 1st entry in the type pack is `number`, and `nil` is not a subtype of `number`\n\t"
-            " * in the 2nd component of the intersection, the function returns the 1st entry in the type pack which has the 1st component of "
-            "the "
-            "union as `string` and it returns the 1st entry in the type pack is `number`, and `string` is not a subtype of `number`\n\t"
-            " * in the 2nd component of the intersection, the function returns the 1st entry in the type pack which has the 2nd component of "
-            "the "
-            "union as `nil` and it returns the 1st entry in the type pack is `number`, and `nil` is not a subtype of `number`\n\t"
-            " * in the 2nd component of the intersection, the function takes the 1st entry in the type pack which is `string?` and it takes "
-            "the 1st "
-            "entry in the type pack is `number`, and `string?` is not a supertype of `number`";
-
-        CHECK_EQ(expected1, toString(result.errors[0]));
-        CHECK_EQ(expected2, toString(result.errors[1]));
     }
     else
     {
@@ -705,7 +668,7 @@ TEST_CASE_FIXTURE(Fixture, "intersection_of_tables_with_top_properties")
         end
     )");
 
-    if (!FFlag::DebugLuauForceOldSolver && FFlag::LuauMorePreciseErrorSuppression)
+    if (!FFlag::DebugLuauForceOldSolver)
     {
         // clang-format off
         const std::string expected =
@@ -728,27 +691,6 @@ TEST_CASE_FIXTURE(Fixture, "intersection_of_tables_with_top_properties")
         // clang-format on
 
         CHECK_LONG_STRINGS_EQ(expected, toString(result.errors.at(0)));
-    }
-    else if (!FFlag::DebugLuauForceOldSolver)
-    {
-        const std::string expected = "Expected this to be\n\t"
-                                     "'{ p: string?, q: number? }'"
-                                     "\nbut got\n\t"
-                                     "'{ p: number?, q: any } & { p: unknown, q: string? }'"
-                                     "; \nthis is because \n\t"
-                                     " * in the 1st component of the intersection, accessing `p` has the 1st component of the union as `number` and "
-                                     "accessing `p` results in `string?`, and `number` is not exactly `string?`\n\t"
-                                     " * in the 1st component of the intersection, accessing `p` results in `number?` and accessing `p` has the 1st "
-                                     "component of the union as `string`, and `number?` is not exactly `string`\n\t"
-                                     " * in the 1st component of the intersection, accessing `q` results in `any` and accessing `q` results in "
-                                     "`number?`, and `any` is not exactly `number?`\n\t"
-                                     " * in the 2nd component of the intersection, accessing `p` results in `unknown` and accessing `p` results in "
-                                     "`string?`, and `unknown` is not exactly `string?`\n\t"
-                                     " * in the 2nd component of the intersection, accessing `q` has the 1st component of the union as `string` and "
-                                     "accessing `q` results in `number?`, and `string` is not exactly `number?`\n\t"
-                                     " * in the 2nd component of the intersection, accessing `q` results in `string?` and accessing `q` has the 1st "
-                                     "component of the union as `number`, and `string?` is not exactly `number`";
-        CHECK_EQ(expected, toString(result.errors[0]));
     }
     else
     {
@@ -782,7 +724,7 @@ TEST_CASE_FIXTURE(Fixture, "overloaded_functions_returning_intersections")
         end
     )");
 
-    if (!FFlag::DebugLuauForceOldSolver && FFlag::LuauMorePreciseErrorSuppression)
+    if (!FFlag::DebugLuauForceOldSolver)
     {
         LUAU_REQUIRE_ERROR_COUNT(2, result);
         // clang-format off
@@ -814,60 +756,6 @@ TEST_CASE_FIXTURE(Fixture, "overloaded_functions_returning_intersections")
 
         CHECK_LONG_STRINGS_EQ(expected1, toString(result.errors.at(0)));
         CHECK_LONG_STRINGS_EQ(expected2, toString(result.errors.at(1)));
-    }
-    else if (!FFlag::DebugLuauForceOldSolver)
-    {
-        const std::string expected1 =
-            "Expected this to be\n\t"
-            "'(nil) -> { p: number, q: number, r: number }'"
-            "\nbut got\n\t"
-            "'((number?) -> { p: number } & { q: number }) & ((string?) -> { p: number } & { r: number })'"
-            "; \nthis is because \n\t"
-            " * in the 1st component of the intersection, the function returns the 1st entry in the type pack which has the 1st component of "
-            "the "
-            "intersection as `{ p: number }` and it returns the 1st entry in the type pack is `{ p: number, q: number, r: number }`, and `{ p: "
-            "number }` is not a subtype of `{ p: number, q: number, r: number }`\n\t"
-            " * in the 1st component of the intersection, the function returns the 1st entry in the type pack which has the 2nd component of "
-            "the "
-            "intersection as `{ q: number }` and it returns the 1st entry in the type pack is `{ p: number, q: number, r: number }`, and `{ q: "
-            "number }` is not a subtype of `{ p: number, q: number, r: number }`\n\t"
-            " * in the 2nd component of the intersection, the function returns the 1st entry in the type pack which has the 1st component of "
-            "the "
-            "intersection as `{ p: number }` and it returns the 1st entry in the type pack is `{ p: number, q: number, r: number }`, and `{ p: "
-            "number }` is not a subtype of `{ p: number, q: number, r: number }`\n\t"
-            " * in the 2nd component of the intersection, the function returns the 1st entry in the type pack which has the 2nd component of "
-            "the "
-            "intersection as `{ r: number }` and it returns the 1st entry in the type pack is `{ p: number, q: number, r: number }`, and `{ r: "
-            "number }` is not a subtype of `{ p: number, q: number, r: number }`";
-
-        const std::string expected2 =
-            "Expected this to be\n\t"
-            "'(number?) -> { p: number, q: number, r: number }'"
-            "\nbut got\n\t"
-            "'((number?) -> { p: number } & { q: number }) & ((string?) -> { p: number } & { r: number })'"
-            "; \nthis is because \n\t"
-            " * in the 1st component of the intersection, the function returns the 1st entry in the type pack which has the 1st component of "
-            "the "
-            "intersection as `{ p: number }` and it returns the 1st entry in the type pack is `{ p: number, q: number, r: number }`, and `{ p: "
-            "number }` is not a subtype of `{ p: number, q: number, r: number }`\n\t"
-            " * in the 1st component of the intersection, the function returns the 1st entry in the type pack which has the 2nd component of "
-            "the "
-            "intersection as `{ q: number }` and it returns the 1st entry in the type pack is `{ p: number, q: number, r: number }`, and `{ q: "
-            "number }` is not a subtype of `{ p: number, q: number, r: number }`\n\t"
-            " * in the 2nd component of the intersection, the function returns the 1st entry in the type pack which has the 1st component of "
-            "the "
-            "intersection as `{ p: number }` and it returns the 1st entry in the type pack is `{ p: number, q: number, r: number }`, and `{ p: "
-            "number }` is not a subtype of `{ p: number, q: number, r: number }`\n\t"
-            " * in the 2nd component of the intersection, the function returns the 1st entry in the type pack which has the 2nd component of "
-            "the "
-            "intersection as `{ r: number }` and it returns the 1st entry in the type pack is `{ p: number, q: number, r: number }`, and `{ r: "
-            "number }` is not a subtype of `{ p: number, q: number, r: number }`\n\t"
-            " * in the 2nd component of the intersection, the function takes the 1st entry in the type pack which is `string?` and it takes "
-            "the 1st "
-            "entry in the type pack has the 1st component of the union as `number`, and `string?` is not a supertype of `number`";
-
-        CHECK_EQ(expected1, toString(result.errors[0]));
-        CHECK_EQ(expected2, toString(result.errors[1]));
     }
     else
     {
@@ -1625,6 +1513,28 @@ TEST_CASE_FIXTURE(BuiltinsFixture, "narrow_intersection_nevers")
     )"));
 
     CHECK_EQ("Player & { read Character: ~(false?) }", toString(requireTypeAtPosition({3, 23})));
+}
+
+TEST_CASE_FIXTURE(BuiltinsFixture, "bounds_propagate_into_free_intersection_bounds")
+{
+    /*
+     * When unifying 'a <: T & C in a context where T is substituted for 't, we must constrain the lower bound of 't by 'a.
+     */
+    ScopedFastFlag sff{FFlag::LuauPropagateFreeTypesIntoUnionAndIntersectionBounds, true};
+
+    CheckResult result = check(R"(
+        local function f<T>(a: T & string): T
+            return a
+        end
+
+        local b = f("hello")
+        local c = f(("world" :: string))
+    )");
+
+    LUAU_CHECK_NO_ERRORS(result);
+
+    CHECK("string" == toString(requireType("b")));
+    CHECK("string" == toString(requireType("c")));
 }
 
 TEST_SUITE_END();

@@ -15,8 +15,6 @@ using namespace Luau;
 LUAU_FASTFLAG(DebugLuauForceOldSolver)
 LUAU_DYNAMIC_FASTINT(LuauTypeFamilyApplicationCartesianProductLimit)
 LUAU_FASTFLAG(DebugLuauAssertOnForcedConstraint)
-LUAU_FASTFLAG(LuauExplicitTypeInstantiationSupport)
-LUAU_FASTFLAG(LuauTypeFunctionsCaptureNestedInstances)
 
 struct TypeFunctionFixture : Fixture
 {
@@ -1765,11 +1763,12 @@ struct TFFixture
     Normalizer normalizer{arena, getBuiltins(), NotNull{&unifierState}, SolverMode::New};
     TypeCheckLimits limits;
     TypeFunctionRuntime runtime{NotNull{&ice}, NotNull{&limits}};
+    Subtyping subtyping{getBuiltins(), arena, NotNull{&normalizer}, NotNull{&runtime}, NotNull{&ice}};
 
     BuiltinTypeFunctions builtinTypeFunctions;
 
     TypeFunctionContext
-        tfc_{arena, getBuiltins(), NotNull{globalScope.get()}, NotNull{&normalizer}, NotNull{&runtime}, NotNull{&ice}, NotNull{&limits}};
+        tfc_{arena, getBuiltins(), NotNull{globalScope.get()}, NotNull{&normalizer}, NotNull{&runtime}, NotNull{&ice}, NotNull{&limits}, NotNull{&subtyping}};
 
     NotNull<TypeFunctionContext> tfc{&tfc_};
 };
@@ -2012,7 +2011,6 @@ TEST_CASE_FIXTURE(BuiltinsFixture, "oss_2114_type_instantiation_on_type_function
 {
     ScopedFastFlag sffs[] = {
         {FFlag::DebugLuauForceOldSolver, false},
-        {FFlag::LuauExplicitTypeInstantiationSupport, true},
     };
 
     LUAU_REQUIRE_NO_ERRORS(check(R"(
@@ -2036,7 +2034,6 @@ TEST_CASE_FIXTURE(BuiltinsFixture, "oss_2144_type_instantiation_on_type_function
 {
     ScopedFastFlag sffs[] = {
         {FFlag::DebugLuauForceOldSolver, false},
-        {FFlag::LuauExplicitTypeInstantiationSupport, true},
     };
 
     LUAU_REQUIRE_NO_ERRORS(check(R"(
@@ -2060,8 +2057,6 @@ TEST_CASE_FIXTURE(BuiltinsFixture, "oss_2144_type_instantiation_on_type_function
 
 TEST_CASE_FIXTURE(TFFixture, "reduce_cyclic_add")
 {
-    ScopedFastFlag _{FFlag::LuauTypeFunctionsCaptureNestedInstances, true};
-
     TypeId root = arena->addType(BlockedType{});
     TypeId addtfit = arena->addType(
         TypeFunctionInstanceType{

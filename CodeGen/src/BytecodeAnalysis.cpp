@@ -9,8 +9,9 @@
 #include "lstate.h"
 
 #include <algorithm>
+#include <array>
 
-LUAU_FASTFLAG(LuauCodegenSetBlockEntryState3)
+LUAU_FASTFLAGVARIABLE(LuauCodegenRegTag2)
 
 namespace Luau
 {
@@ -110,8 +111,7 @@ void loadBytecodeTypeInfo(IrFunction& function)
     }
 
     // Preserve original information
-    if (FFlag::LuauCodegenSetBlockEntryState3)
-        function.bcOriginalTypeInfo = function.bcTypeInfo;
+    function.bcOriginalTypeInfo = function.bcTypeInfo;
 
     CODEGEN_ASSERT(offset == size_t(proto->sizetypeinfo));
 }
@@ -509,6 +509,17 @@ static void applyBuiltinCall(LuauBuiltinFunction bfid, BytecodeTypes& types)
         types.b = LBC_TYPE_NUMBER;
         types.c = LBC_TYPE_NUMBER;
         break;
+    case LBF_BUFFER_READINTEGER:
+        types.result = LBC_TYPE_INTEGER;
+        types.a = LBC_TYPE_BUFFER;
+        types.b = LBC_TYPE_NUMBER;
+        break;
+    case LBF_BUFFER_WRITEINTEGER:
+        types.result = LBC_TYPE_NIL;
+        types.a = LBC_TYPE_BUFFER;
+        types.b = LBC_TYPE_NUMBER;
+        types.c = LBC_TYPE_INTEGER;
+        break;
     case LBF_TABLE_INSERT:
         types.result = LBC_TYPE_NIL;
         types.a = LBC_TYPE_TABLE;
@@ -746,6 +757,24 @@ void buildBytecodeBlocks(IrFunction& function, const std::vector<uint8_t>& jumpT
     }
 }
 
+uint8_t getRegTag(std::array<uint8_t, 256>& regTags, BytecodeTypeInfo& bcTypeInfo, uint8_t reg, int pc)
+{
+    if (!FFlag::LuauCodegenRegTag2)
+        return regTags[reg];
+
+    // Prefer the declared type from static analysis
+    // otherwise fall back to the computed type from a previous instruction
+    auto typeInfo = findRegType(bcTypeInfo, reg, pc);
+    if (typeInfo != nullptr && typeInfo->type != LBC_TYPE_ANY)
+    {
+        auto ty = typeInfo->type;
+        regTags[reg] = ty;
+        return ty;
+    }
+
+    return regTags[reg];
+}
+
 void analyzeBytecodeTypes(IrFunction& function, const HostIrHooks& hostHooks)
 {
     Proto* proto = function.proto;
@@ -756,8 +785,8 @@ void analyzeBytecodeTypes(IrFunction& function, const HostIrHooks& hostHooks)
     prepareRegTypeInfoLookups(bcTypeInfo);
 
     // Setup our current knowledge of type tags based on arguments
-    uint8_t regTags[256];
-    memset(regTags, LBC_TYPE_ANY, 256);
+    std::array<uint8_t, 256> regTags{};
+    regTags.fill(LBC_TYPE_ANY);
 
     function.bcTypes.resize(proto->sizecode);
 
@@ -789,12 +818,15 @@ void analyzeBytecodeTypes(IrFunction& function, const HostIrHooks& hostHooks)
             LuauOpcode op = LuauOpcode(LUAU_INSN_OP(*pc));
 
             // Assign known register types from local type information
-            // TODO: this is an expensive walk for each instruction
-            // TODO: it's best to lookup when register is actually used in the instruction
-            for (BytecodeRegTypeInfo& el : bcTypeInfo.regTypes)
+            if (!FFlag::LuauCodegenRegTag2)
             {
-                if (el.type != LBC_TYPE_ANY && i >= el.startpc && i < el.endpc)
-                    regTags[el.reg] = el.type;
+                // TODO: this is an expensive walk for each instruction
+                // TODO: it's best to lookup when register is actually used in the instruction
+                for (BytecodeRegTypeInfo& el : bcTypeInfo.regTypes)
+                {
+                    if (el.type != LBC_TYPE_ANY && i >= el.startpc && i < el.endpc)
+                        regTags[el.reg] = el.type;
+                }
             }
 
             BytecodeTypes& bcType = function.bcTypes[i];
@@ -854,8 +886,8 @@ void analyzeBytecodeTypes(IrFunction& function, const HostIrHooks& hostHooks)
             {
                 int ra = LUAU_INSN_A(*pc);
                 int rb = LUAU_INSN_B(*pc);
-                bcType.a = regTags[rb];
-                regTags[ra] = regTags[rb];
+                bcType.a = getRegTag(regTags, bcTypeInfo, rb, i);
+                regTags[ra] = bcType.a;
                 bcType.result = regTags[ra];
 
                 refineRegType(bcTypeInfo, ra, i, bcType.result);
@@ -867,11 +899,10 @@ void analyzeBytecodeTypes(IrFunction& function, const HostIrHooks& hostHooks)
                 int rb = LUAU_INSN_B(*pc);
                 int rc = LUAU_INSN_C(*pc);
 
+                bcType.a = getRegTag(regTags, bcTypeInfo, rb, i);
+                bcType.b = getRegTag(regTags, bcTypeInfo, rc, i);
+
                 regTags[ra] = LBC_TYPE_ANY;
-
-                bcType.a = regTags[rb];
-                bcType.b = regTags[rc];
-
                 bcType.result = regTags[ra];
                 break;
             }
@@ -879,17 +910,19 @@ void analyzeBytecodeTypes(IrFunction& function, const HostIrHooks& hostHooks)
             {
                 int rb = LUAU_INSN_B(*pc);
                 int rc = LUAU_INSN_C(*pc);
-                bcType.a = regTags[rb];
-                bcType.b = regTags[rc];
+
+                bcType.a = getRegTag(regTags, bcTypeInfo, rb, i);
+                bcType.b = getRegTag(regTags, bcTypeInfo, rc, i);
                 break;
             }
             case LOP_GETTABLEKS:
+            case LOP_GETUDATAKS:
             {
                 int ra = LUAU_INSN_A(*pc);
                 int rb = LUAU_INSN_B(*pc);
-                uint32_t kc = pc[1];
+                uint32_t kc = int(op) == LOP_GETUDATAKS ? LUAU_INSN_AUX_KV16(pc[1]) : pc[1];
 
-                bcType.a = regTags[rb];
+                bcType.a = getRegTag(regTags, bcTypeInfo, rb, i);
                 bcType.b = getBytecodeConstantTag(proto, kc);
 
                 regTags[ra] = LBC_TYPE_ANY;
@@ -921,10 +954,11 @@ void analyzeBytecodeTypes(IrFunction& function, const HostIrHooks& hostHooks)
                 break;
             }
             case LOP_SETTABLEKS:
+            case LOP_SETUDATAKS:
             {
                 int rb = LUAU_INSN_B(*pc);
 
-                bcType.a = regTags[rb];
+                bcType.a = getRegTag(regTags, bcTypeInfo, rb, i);
                 bcType.b = LBC_TYPE_STRING;
                 break;
             }
@@ -935,7 +969,7 @@ void analyzeBytecodeTypes(IrFunction& function, const HostIrHooks& hostHooks)
 
                 regTags[ra] = LBC_TYPE_ANY;
 
-                bcType.a = regTags[rb];
+                bcType.a = getRegTag(regTags, bcTypeInfo, rb, i);
                 bcType.b = LBC_TYPE_NUMBER;
 
                 bcType.result = regTags[ra];
@@ -945,7 +979,7 @@ void analyzeBytecodeTypes(IrFunction& function, const HostIrHooks& hostHooks)
             {
                 int rb = LUAU_INSN_B(*pc);
 
-                bcType.a = regTags[rb];
+                bcType.a = getRegTag(regTags, bcTypeInfo, rb, i);
                 bcType.b = LBC_TYPE_NUMBER;
                 break;
             }
@@ -956,8 +990,8 @@ void analyzeBytecodeTypes(IrFunction& function, const HostIrHooks& hostHooks)
                 int rb = LUAU_INSN_B(*pc);
                 int rc = LUAU_INSN_C(*pc);
 
-                bcType.a = regTags[rb];
-                bcType.b = regTags[rc];
+                bcType.a = getRegTag(regTags, bcTypeInfo, rb, i);
+                bcType.b = getRegTag(regTags, bcTypeInfo, rc, i);
 
                 regTags[ra] = LBC_TYPE_ANY;
 
@@ -980,8 +1014,8 @@ void analyzeBytecodeTypes(IrFunction& function, const HostIrHooks& hostHooks)
                 int rb = LUAU_INSN_B(*pc);
                 int rc = LUAU_INSN_C(*pc);
 
-                bcType.a = regTags[rb];
-                bcType.b = regTags[rc];
+                bcType.a = getRegTag(regTags, bcTypeInfo, rb, i);
+                bcType.b = getRegTag(regTags, bcTypeInfo, rc, i);
 
                 regTags[ra] = LBC_TYPE_ANY;
 
@@ -1013,8 +1047,8 @@ void analyzeBytecodeTypes(IrFunction& function, const HostIrHooks& hostHooks)
                 int rb = LUAU_INSN_B(*pc);
                 int rc = LUAU_INSN_C(*pc);
 
-                bcType.a = regTags[rb];
-                bcType.b = regTags[rc];
+                bcType.a = getRegTag(regTags, bcTypeInfo, rb, i);
+                bcType.b = getRegTag(regTags, bcTypeInfo, rc, i);
 
                 regTags[ra] = LBC_TYPE_ANY;
 
@@ -1034,7 +1068,7 @@ void analyzeBytecodeTypes(IrFunction& function, const HostIrHooks& hostHooks)
                 int rb = LUAU_INSN_B(*pc);
                 int kc = LUAU_INSN_C(*pc);
 
-                bcType.a = regTags[rb];
+                bcType.a = getRegTag(regTags, bcTypeInfo, rb, i);
                 bcType.b = getBytecodeConstantTag(proto, kc);
 
                 regTags[ra] = LBC_TYPE_ANY;
@@ -1058,7 +1092,7 @@ void analyzeBytecodeTypes(IrFunction& function, const HostIrHooks& hostHooks)
                 int rb = LUAU_INSN_B(*pc);
                 int kc = LUAU_INSN_C(*pc);
 
-                bcType.a = regTags[rb];
+                bcType.a = getRegTag(regTags, bcTypeInfo, rb, i);
                 bcType.b = getBytecodeConstantTag(proto, kc);
 
                 regTags[ra] = LBC_TYPE_ANY;
@@ -1091,7 +1125,7 @@ void analyzeBytecodeTypes(IrFunction& function, const HostIrHooks& hostHooks)
                 int rb = LUAU_INSN_B(*pc);
                 int kc = LUAU_INSN_C(*pc);
 
-                bcType.a = regTags[rb];
+                bcType.a = getRegTag(regTags, bcTypeInfo, rb, i);
                 bcType.b = getBytecodeConstantTag(proto, kc);
 
                 regTags[ra] = LBC_TYPE_ANY;
@@ -1112,7 +1146,7 @@ void analyzeBytecodeTypes(IrFunction& function, const HostIrHooks& hostHooks)
                 int rc = LUAU_INSN_C(*pc);
 
                 bcType.a = getBytecodeConstantTag(proto, kb);
-                bcType.b = regTags[rc];
+                bcType.b = getRegTag(regTags, bcTypeInfo, rc, i);
 
                 regTags[ra] = LBC_TYPE_ANY;
 
@@ -1134,7 +1168,7 @@ void analyzeBytecodeTypes(IrFunction& function, const HostIrHooks& hostHooks)
                 int rc = LUAU_INSN_C(*pc);
 
                 bcType.a = getBytecodeConstantTag(proto, kb);
-                bcType.b = regTags[rc];
+                bcType.b = getRegTag(regTags, bcTypeInfo, rc, i);
 
                 regTags[ra] = LBC_TYPE_ANY;
 
@@ -1164,7 +1198,7 @@ void analyzeBytecodeTypes(IrFunction& function, const HostIrHooks& hostHooks)
                 int ra = LUAU_INSN_A(*pc);
                 int rb = LUAU_INSN_B(*pc);
 
-                bcType.a = regTags[rb];
+                bcType.a = getRegTag(regTags, bcTypeInfo, rb, i);
 
                 regTags[ra] = LBC_TYPE_BOOLEAN;
                 bcType.result = regTags[ra];
@@ -1175,7 +1209,7 @@ void analyzeBytecodeTypes(IrFunction& function, const HostIrHooks& hostHooks)
                 int ra = LUAU_INSN_A(*pc);
                 int rb = LUAU_INSN_B(*pc);
 
-                bcType.a = regTags[rb];
+                bcType.a = getRegTag(regTags, bcTypeInfo, rb, i);
 
                 regTags[ra] = LBC_TYPE_ANY;
 
@@ -1194,7 +1228,7 @@ void analyzeBytecodeTypes(IrFunction& function, const HostIrHooks& hostHooks)
                 int ra = LUAU_INSN_A(*pc);
                 int rb = LUAU_INSN_B(*pc);
 
-                bcType.a = regTags[rb];
+                bcType.a = getRegTag(regTags, bcTypeInfo, rb, i);
 
                 regTags[ra] = LBC_TYPE_NUMBER; // Even if it's a custom __len, it's ok to assume a sane result
                 bcType.result = regTags[ra];
@@ -1334,12 +1368,13 @@ void analyzeBytecodeTypes(IrFunction& function, const HostIrHooks& hostHooks)
                 break;
             }
             case LOP_NAMECALL:
+            case LOP_NAMECALLUDATA:
             {
                 int ra = LUAU_INSN_A(*pc);
                 int rb = LUAU_INSN_B(*pc);
-                uint32_t kc = pc[1];
+                uint32_t kc = int(op) == LOP_NAMECALLUDATA ? LUAU_INSN_AUX_KV16(pc[1]) : pc[1];
 
-                bcType.a = regTags[rb];
+                bcType.a = getRegTag(regTags, bcTypeInfo, rb, i);
                 bcType.b = getBytecodeConstantTag(proto, kc);
 
                 // While namecall might result in a callable table, we assume the function fast path
@@ -1359,6 +1394,7 @@ void analyzeBytecodeTypes(IrFunction& function, const HostIrHooks& hostHooks)
                     knownNextCallResult = LuauBytecodeType(hostHooks.userdataNamecallBytecodeType(bcType.a, field, str->len));
                 break;
             }
+            case LOP_CALLFB:
             case LOP_CALL:
             {
                 int ra = LUAU_INSN_A(*pc);
@@ -1427,8 +1463,8 @@ void analyzeBytecodeTypes(IrFunction& function, const HostIrHooks& hostHooks)
                 int ra = LUAU_INSN_A(*pc);
                 int rb = pc[1];
 
-                bcType.a = regTags[ra];
-                bcType.b = regTags[rb];
+                bcType.a = getRegTag(regTags, bcTypeInfo, ra, i);
+                bcType.b = getRegTag(regTags, bcTypeInfo, rb, i);
                 break;
             }
             case LOP_JUMPX:
@@ -1449,8 +1485,8 @@ void analyzeBytecodeTypes(IrFunction& function, const HostIrHooks& hostHooks)
                 int rb = LUAU_INSN_B(*pc);
                 int rc = LUAU_INSN_C(*pc);
 
-                bcType.a = regTags[rb];
-                bcType.b = regTags[rc];
+                bcType.a = getRegTag(regTags, bcTypeInfo, rb, i);
+                bcType.b = getRegTag(regTags, bcTypeInfo, rc, i);
 
                 regTags[ra] = LBC_TYPE_ANY;
                 bcType.result = regTags[ra];
@@ -1463,7 +1499,7 @@ void analyzeBytecodeTypes(IrFunction& function, const HostIrHooks& hostHooks)
                 int rb = LUAU_INSN_B(*pc);
                 int kc = LUAU_INSN_C(*pc);
 
-                bcType.a = regTags[rb];
+                bcType.a = getRegTag(regTags, bcTypeInfo, rb, i);
                 bcType.b = getBytecodeConstantTag(proto, kc);
 
                 regTags[ra] = LBC_TYPE_ANY;
@@ -1484,6 +1520,7 @@ void analyzeBytecodeTypes(IrFunction& function, const HostIrHooks& hostHooks)
             case LOP_PREPVARARGS:
             case LOP_GETVARARGS:
             case LOP_FORGPREP:
+            case LOP_NEWCLASSMEMBER:
                 break;
             default:
                 CODEGEN_ASSERT(!"Unknown instruction");
