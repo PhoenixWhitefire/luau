@@ -210,7 +210,7 @@ LUA_API void* lua_newuserdatadtor(lua_State* L, size_t sz, lua_Destructor dtor);
 
 LUA_API void* lua_newbuffer(lua_State* L, size_t sz);
 
-typedef void (*lua_BufferFree)(lua_State* L, void* data);
+typedef void (*lua_BufferFree)(lua_State* L, void* data, size_t sz);
 LUA_API void* lua_newexternalbuffer(lua_State* L, size_t sz, void* data, lua_BufferFree free_cb, int mode);
 
 /*

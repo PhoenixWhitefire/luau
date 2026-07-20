@@ -44,7 +44,7 @@ void luaB_freebuffer(lua_State* L, Buffer* b, lua_Page* page)
 {
     if (b->mode != 0) {
         if (b->free_cb) {
-            b->free_cb(L, b->data);
+            b->free_cb(L, b->data, b->len);
         }
         L->global->totalbytes -= b->len;
         L->global->memcatbytes[b->memcat] -= b->len;

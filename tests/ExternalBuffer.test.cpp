@@ -12,7 +12,7 @@
 LUAU_FASTFLAG(LuauExternallyManagedBuffers)
 
 static int s_externalBufferFreeCount = 0;
-static void test_buffer_free_cb(lua_State* L, void* data)
+static void test_buffer_free_cb(lua_State* L, void* data, size_t sz)
 {
     s_externalBufferFreeCount++;
 }
