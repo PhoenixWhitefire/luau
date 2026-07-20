@@ -1533,7 +1533,7 @@ void* lua_newbuffer(lua_State* L, size_t sz)
 
 void* lua_newexternalbuffer(lua_State* L, size_t sz, void* data, lua_BufferFree free_cb, int mode)
 {
-    api_check(L, FFlag::LuauExternallyManagedBuffers);
+    LUAU_ASSERT(FFlag::LuauExternallyManagedBuffers);
     api_check(L, mode == 1 || mode == 2);
     luaC_checkGC(L);
     luaC_threadbarrier(L);
