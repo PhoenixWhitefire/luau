@@ -313,6 +313,7 @@ typedef struct LuauBuffer
 
     unsigned int len;
     char* data;
+    void* userdata;
     lua_BufferFree free_cb;
 
     alignas(8) char inline_data[1];

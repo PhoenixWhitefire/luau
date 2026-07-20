@@ -1531,14 +1531,14 @@ void* lua_newbuffer(lua_State* L, size_t sz)
     return b->data;
 }
 
-void* lua_newexternalbuffer(lua_State* L, size_t sz, void* data, lua_BufferFree free_cb, int mode)
+void* lua_newexternalbuffer(lua_State* L, size_t sz, void* data, void* userdata, lua_BufferFree free_cb, int mode)
 {
     LUAU_ASSERT(FFlag::LuauExternallyManagedBuffers);
     api_check(L, mode == 1 || mode == 2);
     luaC_checkGC(L);
     luaC_threadbarrier(L);
     ensure_stack(L, 1);
-    Buffer* b = luaB_newexternalbuffer(L, sz, data, free_cb, mode);
+    Buffer* b = luaB_newexternalbuffer(L, sz, data, userdata, free_cb, mode);
     setbufvalue(L, L->top, b);
     api_incr_top(L);
     return b->data;

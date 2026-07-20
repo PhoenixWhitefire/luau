@@ -12,7 +12,7 @@
 LUAU_FASTFLAG(LuauExternallyManagedBuffers)
 
 static int s_externalBufferFreeCount = 0;
-static void test_buffer_free_cb(lua_State* L, void* data, size_t sz)
+static void test_buffer_free_cb(lua_State* L, void* data, size_t sz, void* userdata)
 {
     s_externalBufferFreeCount++;
 }
@@ -45,7 +45,7 @@ TEST_CASE("ExternalBufferMutable")
     char my_memory[32];
     memset(my_memory, 0, sizeof(my_memory));
 
-    lua_newexternalbuffer(L, sizeof(my_memory), my_memory, test_buffer_free_cb, 2);
+    lua_newexternalbuffer(L, sizeof(my_memory), my_memory, nullptr, test_buffer_free_cb, 2);
     lua_setglobal(L, "ext_buf");
 
     // Writes should scueed as this is a mutable external buffer
@@ -76,7 +76,7 @@ TEST_CASE("ExternalBufferImmutable")
     memset(my_memory, 0, sizeof(my_memory));
     my_memory[0] = 55;
 
-    lua_newexternalbuffer(L, sizeof(my_memory), my_memory, test_buffer_free_cb, 1);
+    lua_newexternalbuffer(L, sizeof(my_memory), my_memory, nullptr, test_buffer_free_cb, 1);
     lua_setglobal(L, "ext_buf");
 
     // Read from buffer via Lua should succeed (just not writes)
