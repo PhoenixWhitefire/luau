@@ -13,8 +13,6 @@
 
 #include <string.h>
 
-LUAU_FASTFLAG(LuauClosureUsageCounter)
-
 // limit for table tag-method chains (to avoid loops)
 #define MAXTAGLOOP 100
 
@@ -132,8 +130,7 @@ void luaV_gettable(lua_State* L, const TValue* t, TValue* key, StkId val)
             if (ttisnil(offsettval))
                 luaG_missingmembererror(L, t, key);
 
-            LUAU_ASSERT(ttisnumber(offsettval));
-            int offset = int(nvalue(offsettval));
+            const uint32_t offset = uint32_t(nvalue(offsettval));
             setobj2s(L, val, luaR_lookupmemberatoffset(inst, offset));
             return;
         }
@@ -147,9 +144,8 @@ void luaV_gettable(lua_State* L, const TValue* t, TValue* key, StkId val)
             if (ttisnil(res))
                 luaG_missingmembererror(L, t, key);
 
-            LUAU_ASSERT(ttisnumber(res));
-            int offset = int(nvalue(res));
-            LUAU_ASSERT(offset >= 0 && offset < lco->numberofallmembers);
+            const uint32_t offset = uint32_t(nvalue(res));
+            LUAU_ASSERT(offset < lco->numberofallmembers);
 
             // This is the case where we try to access an instance member on a
             // class object, for example:
@@ -216,8 +212,8 @@ void luaV_settable(lua_State* L, const TValue* t, TValue* key, StkId val)
             const TValue* offset = luaH_get(inst->lclass->memberstooffset, key);
             if (ttisnil(offset))
                 luaG_missingmembererror(L, t, key);
-            const int offsetnum = int(nvalue(offset));
-            LUAU_ASSERT(offsetnum >= 0 && offsetnum < inst->lclass->numberofallmembers);
+            const uint32_t offsetnum = uint32_t(nvalue(offset));
+            LUAU_ASSERT(offsetnum < inst->lclass->numberofallmembers);
             if (offsetnum >= inst->lclass->numberofinstancemembers)
                 luaG_indexerror(L, t, key);
             setobj2class(L, &inst->members[offsetnum], val);
@@ -671,19 +667,13 @@ LUAU_NOINLINE void luaV_callTM(lua_State* L, int nparams, int res)
 
     CallInfo* ci = incr_ci(L);
     ci->func = fun;
+    ci->p = nullptr;
     ci->base = fun + 1;
     ci->top = top + LUA_MINSTACK;
     ci->savedpc = NULL;
     ci->flags = 0;
     ci->nresults = (res >= 0);
     LUAU_ASSERT(ci->top <= L->stack_last);
-
-    Closure* ccl;
-    if (FFlag::LuauClosureUsageCounter)
-    {
-        ccl = clvalue(fun);
-        ccl->usage++;
-    }
 
     LUAU_ASSERT(ttisfunction(ci->func));
     LUAU_ASSERT(clvalue(ci->func)->isC);
@@ -698,12 +688,6 @@ LUAU_NOINLINE void luaV_callTM(lua_State* L, int nparams, int res)
     // ci is our callinfo, cip is our parent
     // note that we read L->ci again since it may have been reallocated by the call
     CallInfo* cip = L->ci - 1;
-
-    if (FFlag::LuauClosureUsageCounter)
-    {
-        LUAU_ASSERT(ccl->usage > 0);
-        ccl->usage--;
-    }
 
     // copy return value into parent stack
     if (res >= 0)

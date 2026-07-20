@@ -7,6 +7,7 @@
 #include <ostream>
 
 LUAU_FASTFLAG(DebugLuauLogSolver)
+LUAU_FASTFLAG(LuauRemovePrimitiveTypeConstraintAndSubtypingUnifier)
 
 namespace Luau
 {
@@ -182,7 +183,7 @@ bool ConstraintGraph::addDependencyOf(Constraint* dependency, Constraint* target
 
 /**
  * Let's say we have nodes A, B, C, and D (where => means "depends on")
- * 
+ *
  *  A, B, C => D
  *
  * As part of dispatching D, we need to mint E. This function sets us up such that:
@@ -245,7 +246,7 @@ ConstraintGraph::UnblockedTypes ConstraintGraph::unblockConstraint(NotNull<const
             auto deps = findDependencyList(*depCons);
             deps->remove(c.get());
             if (FFlag::DebugLuauLogSolver)
-                printf("Unblocking count=%d\t%s\n", int(deps->size()), toString(**depCons, { /* exhaustive */ true}).c_str());
+                printf("Unblocking count=%d\t%s\n", int(deps->size()), toString(**depCons, {/* exhaustive */ true}).c_str());
         }
         else
         {
@@ -266,9 +267,9 @@ ConstraintGraph::UnblockedTypes ConstraintGraph::unblockConstraint(NotNull<const
      * [bind] call.
      *
      * This means that any [emplaceType] outside this file is subject to drift,
-     * but it is safe as long as it occurs while the type being mutated is in 
+     * but it is safe as long as it occurs while the type being mutated is in
      * the reverse dependency set of the constraint being dispatched.
-     * 
+     *
      * We do this in two steps to ensure that [c] does not exist as a
      * dependency of *any* type while repairing references. An alternative
      * implementation would be to pass [c] to [repairTypeReferences] and know
@@ -287,16 +288,20 @@ ConstraintGraph::UnblockedTypes ConstraintGraph::unblockConstraint(NotNull<const
 bool ConstraintGraph::hasUnsolvedDependencies(ConstraintVertex vertex)
 {
     auto deps = findDependencyList(vertex);
-    if (auto c = vertex.get_if<const Constraint*>())
+    if (!FFlag::LuauRemovePrimitiveTypeConstraintAndSubtypingUnifier)
     {
-        if (auto ptc = (*c)->c.get_if<PrimitiveTypeConstraint>()) 
-            return deps->size() > 1;
+        if (auto c = vertex.get_if<const Constraint*>())
+        {
+            if (auto ptc = (*c)->c.get_if<DEPRECATED_PrimitiveTypeConstraint>())
+                return deps->size() > 1;
+        }
     }
     return deps->size() > 0;
 }
 
-bool ConstraintGraph::hasStrictlyMoreThanOneDependency(ConstraintVertex vertex)
+bool ConstraintGraph::DEPRECATED_hasStrictlyMoreThanOneDependency(ConstraintVertex vertex)
 {
+    LUAU_ASSERT(!FFlag::LuauRemovePrimitiveTypeConstraintAndSubtypingUnifier);
     auto deps = findDependencyList(vertex);
     return deps->size() > 1;
 }
@@ -607,4 +612,4 @@ void ConstraintGraph::dumpWith(const std::vector<NotNull<const Constraint>>& uns
         }
     }
 }
-}
+} // namespace Luau

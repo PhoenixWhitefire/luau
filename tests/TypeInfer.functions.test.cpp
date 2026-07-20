@@ -20,9 +20,11 @@ LUAU_FASTFLAG(DebugLuauAssertOnForcedConstraint)
 LUAU_FASTFLAG(LuauInstantiateInSubtyping)
 LUAU_FASTFLAG(DebugLuauForceOldSolver)
 LUAU_FASTINT(LuauTarjanChildLimit)
-LUAU_FASTFLAG(LuauFormatUseLastPosition)
 LUAU_FASTFLAG(LuauCheckFunctionStatementTypes)
-LUAU_FASTFLAG(LuauBidirectionalInferenceBetterUnionHandling)
+LUAU_FASTFLAG(LuauBidirectionalInferenceVariadics)
+LUAU_FASTFLAG(LuauBidirectionalInferenceBetterLambdaHandling)
+LUAU_FASTFLAG(LuauHigherOrderGenericInference)
+LUAU_FASTFLAG(LuauCollapseDirectBoundCycles)
 
 TEST_SUITE_BEGIN("TypeInferFunctions");
 
@@ -691,11 +693,6 @@ TEST_CASE_FIXTURE(Fixture, "infer_higher_order_function")
 
 TEST_CASE_FIXTURE(Fixture, "higher_order_function_2")
 {
-    // CLI-114134: this code *probably* wants the egraph in order
-    // to work properly. The new solver either falls over or
-    // forces so many constraints as to be unreliable.
-    DOES_NOT_PASS_NEW_SOLVER_GUARD();
-
     CheckResult result = check(R"(
         function bottomupmerge(comp, a, b, left, mid, right)
             local i, j = left, mid
@@ -761,11 +758,6 @@ TEST_CASE_FIXTURE(Fixture, "higher_order_function_3")
 
 TEST_CASE_FIXTURE(BuiltinsFixture, "higher_order_function_4")
 {
-    // CLI-114134: this code *probably* wants the egraph in order
-    // to work properly. The new solver either falls over or
-    // forces so many constraints as to be unreliable.
-    DOES_NOT_PASS_NEW_SOLVER_GUARD();
-
     CheckResult result = check(R"(
         function bottomupmerge(comp, a, b, left, mid, right)
             local i, j = left, mid
@@ -1432,16 +1424,25 @@ g12({x=1}, {x=2}, function(x, y) return {x=x.x + y.x} end)
 
 TEST_CASE_FIXTURE(BuiltinsFixture, "infer_generic_lib_function_function_argument")
 {
-    ScopedFastFlag _{FFlag::DebugLuauForceOldSolver, false};
+    DOES_NOT_PASS_OLD_SOLVER_GUARD();
+
+    ScopedFastFlag sffs[] = {
+        {FFlag::LuauCollapseDirectBoundCycles, true},
+        {FFlag::LuauRemovePrimitiveTypeConstraintAndSubtypingUnifier, true},
+    };
+
 
     CheckResult result = check(R"(
 local a = {{x=4}, {x=7}, {x=1}}
 table.sort(a, function(x, y) return x.x < y.x end)
     )");
 
-    // FIXME CLI-161355
+    // FIXME CLI-161355: We *should* be able to bidirectionally push the type
+    // of `a` into the lambda, but for now we claim that the inner lambda has
+    // type ({ read x: unknown }, { read x: unknown }) -> bool, and then
+    // error because you canont compare `unknown`s.
     LUAU_REQUIRE_ERROR_COUNT(1, result);
-    CHECK(get<CannotInferBinaryOperation>(result.errors[0]));
+    CHECK(get<GenericError>(result.errors[0]));
 }
 
 TEST_CASE_FIXTURE(Fixture, "variadic_any_is_compatible_with_a_generic_TypePack")
@@ -2893,6 +2894,10 @@ TEST_CASE_FIXTURE(Fixture, "fuzzer_missing_follow_in_ast_stat_fun")
 
 TEST_CASE_FIXTURE(Fixture, "unifier_should_not_bind_free_types")
 {
+    ScopedFastFlag sffs[] = {
+        {FFlag::LuauRemovePrimitiveTypeConstraintAndSubtypingUnifier, true},
+    };
+
     CheckResult result = check(R"(
         function foo(player)
             local success,result = player:thing()
@@ -2907,11 +2912,26 @@ TEST_CASE_FIXTURE(Fixture, "unifier_should_not_bind_free_types")
     )");
 
     // The new solver should ideally be able to do better here, but this is no worse than the old solver.
-    LUAU_REQUIRE_ERROR_COUNT(1, result);
-    auto tm1 = get<TypeMismatch>(result.errors[0]);
-    REQUIRE(tm1);
-    CHECK(toString(tm1->wantedType) == "string");
-    CHECK(toString(tm1->givenType) == "boolean");
+    if (FFlag::DebugLuauForceOldSolver)
+    {
+        LUAU_REQUIRE_ERROR_COUNT(1, result);
+        auto tm1 = get<TypeMismatch>(result.errors[0]);
+        REQUIRE(tm1);
+        CHECK(toString(tm1->wantedType) == "string");
+        CHECK(toString(tm1->givenType) == "boolean");
+    }
+    else
+    {
+        LUAU_REQUIRE_ERROR_COUNT(2, result);
+        auto tm1 = get<TypeMismatch>(result.errors[0]);
+        REQUIRE(tm1);
+        CHECK(toString(tm1->wantedType) == "string");
+        CHECK(toString(tm1->givenType) == "boolean");
+        auto tm2 = get<TypeMismatch>(result.errors[1]);
+        REQUIRE(tm2);
+        CHECK(toString(tm2->wantedType) == "string");
+        CHECK(toString(tm2->givenType) == "unknown & ~(false?)");
+    }
 }
 
 TEST_CASE_FIXTURE(Fixture, "captured_local_is_assigned_a_function")
@@ -3900,6 +3920,7 @@ TEST_CASE_FIXTURE(BuiltinsFixture, "cli_187542_recursive_call_in_loop")
     ScopedFastFlag sffs[] = {
         {FFlag::DebugLuauForceOldSolver, false},
         {FFlag::DebugLuauAssertOnForcedConstraint, true},
+        {FFlag::LuauRemovePrimitiveTypeConstraintAndSubtypingUnifier, true},
     };
 
     CheckResult result = check(R"(
@@ -3916,7 +3937,7 @@ TEST_CASE_FIXTURE(BuiltinsFixture, "cli_187542_recursive_call_in_loop")
     // This will have some other errors, but all we care about is that
     // this finished solving all constraints without forcing any.
     // FIXME CLI-188000: We infer `a: (never) -> never`, which is incorrect.
-    LUAU_REQUIRE_ERROR_COUNT(4, result);
+    LUAU_REQUIRE_ERROR_COUNT(1, result);
     LUAU_REQUIRE_NO_ERROR(result, ConstraintSolvingIncompleteError);
 }
 
@@ -4137,10 +4158,7 @@ TEST_CASE_FIXTURE(BuiltinsFixture, "dont_leak_generics_keyof")
 
 TEST_CASE_FIXTURE(Fixture, "bidi_inference_functions_complete_ex")
 {
-    ScopedFastFlag sffs[] = {
-        {FFlag::DebugLuauForceOldSolver, false},
-        {FFlag::LuauBidirectionalInferenceBetterUnionHandling, true},
-    };
+    DOES_NOT_PASS_OLD_SOLVER_GUARD();
 
     LUAU_REQUIRE_NO_ERRORS(check(R"(
         --!strict
@@ -4180,10 +4198,7 @@ TEST_CASE_FIXTURE(Fixture, "bidi_inference_functions_complete_ex")
 
 TEST_CASE_FIXTURE(Fixture, "bidi_inference_union_of_functions_1")
 {
-    ScopedFastFlag sffs[] = {
-        {FFlag::DebugLuauForceOldSolver, false},
-        {FFlag::LuauBidirectionalInferenceBetterUnionHandling, true},
-    };
+    DOES_NOT_PASS_OLD_SOLVER_GUARD();
 
     LUAU_REQUIRE_NO_ERRORS(check(R"(
         local function f(_: ((string) -> ()) | ((number, number) -> ()))
@@ -4201,10 +4216,7 @@ TEST_CASE_FIXTURE(Fixture, "bidi_inference_union_of_functions_1")
 
 TEST_CASE_FIXTURE(Fixture, "bidi_inference_union_of_functions_2")
 {
-    ScopedFastFlag sffs[] = {
-        {FFlag::DebugLuauForceOldSolver, false},
-        {FFlag::LuauBidirectionalInferenceBetterUnionHandling, true},
-    };
+    DOES_NOT_PASS_OLD_SOLVER_GUARD();
 
     LUAU_REQUIRE_NO_ERRORS(check(R"(
         local function f(_: ((string) -> ()) | ((number, number) -> ()))
@@ -4220,10 +4232,7 @@ TEST_CASE_FIXTURE(Fixture, "bidi_inference_union_of_functions_2")
 
 TEST_CASE_FIXTURE(Fixture, "bidi_inference_union_of_functions_3")
 {
-    ScopedFastFlag sffs[] = {
-        {FFlag::DebugLuauForceOldSolver, false},
-        {FFlag::LuauBidirectionalInferenceBetterUnionHandling, true},
-    };
+    DOES_NOT_PASS_OLD_SOLVER_GUARD()
 
     // Weird edge case: pick the "first" option.
     LUAU_REQUIRE_NO_ERRORS(check(R"(
@@ -4241,10 +4250,7 @@ TEST_CASE_FIXTURE(Fixture, "bidi_inference_union_of_functions_3")
 
 TEST_CASE_FIXTURE(Fixture, "bidi_inference_union_of_functions_4")
 {
-    ScopedFastFlag sffs[] = {
-        {FFlag::DebugLuauForceOldSolver, false},
-        {FFlag::LuauBidirectionalInferenceBetterUnionHandling, true},
-    };
+    DOES_NOT_PASS_OLD_SOLVER_GUARD();
 
     // Works with `nil`.
     LUAU_REQUIRE_NO_ERRORS(check(R"(
@@ -4259,5 +4265,107 @@ TEST_CASE_FIXTURE(Fixture, "bidi_inference_union_of_functions_4")
     CHECK_EQ("string", toString(requireTypeAtPosition({5, 23})));
 }
 
+TEST_CASE_FIXTURE(BuiltinsFixture, "bidi_inference_variadic_inner_lambda")
+{
+    ScopedFastFlag _{FFlag::LuauBidirectionalInferenceVariadics, true};
+
+    LUAU_REQUIRE_NO_ERRORS(check(R"(
+        local f: ({ (number, ...string) -> () }) -> () = nil :: any
+        f(
+            {
+                function (alpha, beta, gamma)
+                    print(alpha, beta, gamma)
+                end
+            }
+        )
+    )"));
+
+    CHECK_EQ("number", toString(requireTypeAtPosition({5, 27})));
+    CHECK_EQ("string", toString(requireTypeAtPosition({5, 34})));
+    CHECK_EQ("string", toString(requireTypeAtPosition({5, 40})));
+}
+
+TEST_CASE_FIXTURE(BuiltinsFixture, "bidi_inference_variadic_top_level")
+{
+    DOES_NOT_PASS_OLD_SOLVER_GUARD();
+
+    ScopedFastFlag _{FFlag::LuauBidirectionalInferenceVariadics, true};
+
+    LUAU_REQUIRE_NO_ERRORS(check(R"(
+        local Context = {}
+        Context.__index = Context
+        type ContextData = {}
+        type Context = setmetatable<ContextData, typeof(Context)>
+        function Context.text(self: Context, text: string): string
+            return text
+        end
+        type Handler = (Context) -> string
+        local function post(path: string, first: Handler, ...: Handler)
+        end
+        post(
+            "/validate",
+            function(c)
+                return c:text("ok")
+            end,
+            function(c)
+                return c:text(`not ok`)
+            end
+        )
+    )"));
+}
+
+TEST_CASE_FIXTURE(BuiltinsFixture, "bidirectional_inference_variadic_type_pack_read_only_prop")
+{
+    DOES_NOT_PASS_OLD_SOLVER_GUARD();
+
+    ScopedFastFlag _{FFlag::LuauBidirectionalInferenceVariadics, true};
+
+    LUAU_REQUIRE_NO_ERRORS(check(R"(
+        local foo: { read bar: (...string) -> () } = {
+            bar = function (foobar)
+                print(foobar)
+            end
+        }
+    )"));
+
+    CHECK_EQ("string", toString(requireTypeAtPosition({3, 24})));
+}
+
+TEST_CASE_FIXTURE(Fixture, "bidi_inference_union_of_functions_distinguished_by_return_type")
+{
+    ScopedFastFlag sffs[] = {
+        {FFlag::DebugLuauForceOldSolver, false},
+        {FFlag::LuauBidirectionalInferenceBetterLambdaHandling, true},
+    };
+
+    // useEffect pattern: callback is either (() -> ()) or (() -> () -> ())
+    // When the lambda returns a function, the solver should pick the second arm.
+    LUAU_REQUIRE_NO_ERRORS(check(R"(
+        local function useEffect(callback: (() -> ()) | (() -> () -> ()), deps: {any}?): ()
+        end
+
+        useEffect(function()
+            return function()
+            end
+        end)
+    )"));
+}
+
+TEST_CASE_FIXTURE(BuiltinsFixture, "pass_generic_function_to_pcall")
+{
+    ScopedFastFlag sff{FFlag::LuauHigherOrderGenericInference, true};
+
+    CheckResult result = check(R"(
+        local function identity<T>(t: T)
+            return t
+        end
+
+        local ok, result = pcall(identity, 42)
+    )");
+
+    LUAU_CHECK_NO_ERRORS(result);
+
+    CHECK("number" == toString(requireType("result")));
+}
 
 TEST_SUITE_END();

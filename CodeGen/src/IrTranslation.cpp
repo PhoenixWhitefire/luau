@@ -12,7 +12,8 @@
 #include "lstate.h"
 #include "ltm.h"
 
-LUAU_FASTFLAG(LuauCodegenInteger2)
+LUAU_FASTFLAG(LuauCodegenInteger3)
+LUAU_FASTFLAGVARIABLE(LuauCodegenBuilinDeadRange)
 
 namespace Luau
 {
@@ -105,7 +106,7 @@ static void translateInstLoadConstant(IrBuilder& build, int ra, int k)
         build.inst(IrCmd::STORE_INT, build.vmReg(ra), build.constInt(protok.value.b));
         build.inst(IrCmd::STORE_TAG, build.vmReg(ra), build.constTag(LUA_TBOOLEAN));
     }
-    else if (FFlag::LuauCodegenInteger2 && protok.tt == LUA_TINTEGER)
+    else if (FFlag::LuauCodegenInteger3 && protok.tt == LUA_TINTEGER)
     {
         build.inst(IrCmd::STORE_INT64, build.vmReg(ra), build.constInt64(protok.value.l));
         build.inst(IrCmd::STORE_TAG, build.vmReg(ra), build.constTag(LUA_TINTEGER));
@@ -264,7 +265,7 @@ void translateInstJumpIfEqShortcut(IrBuilder& build, const Instruction* pc, int 
         // Note that if the number fast-path is not taken at all code that would have been in the fallback is actually the main path
         build.beginBlock(fallback);
     }
-    else if (FFlag::LuauCodegenInteger2 && isExpectedOrUnknownBytecodeType(bcTypes.a, LBC_TYPE_INTEGER) &&
+    else if (FFlag::LuauCodegenInteger3 && isExpectedOrUnknownBytecodeType(bcTypes.a, LBC_TYPE_INTEGER) &&
              isExpectedOrUnknownBytecodeType(bcTypes.b, LBC_TYPE_INTEGER))
     {
         IrOp ta = build.inst(IrCmd::LOAD_TAG, build.vmReg(ra));
@@ -1037,7 +1038,7 @@ IrOp translateFastCallN(IrBuilder& build, const Instruction* pc, int pcpos, bool
 
         if (protok.tt == LUA_TNUMBER)
             builtinArgs = build.constDouble(protok.value.n);
-        else if (FFlag::LuauCodegenInteger2 && protok.tt == LUA_TINTEGER)
+        else if (FFlag::LuauCodegenInteger3 && protok.tt == LUA_TINTEGER)
             builtinArgs = build.constInt64(protok.value.l);
     }
 
@@ -1059,7 +1060,7 @@ IrOp translateFastCallN(IrBuilder& build, const Instruction* pc, int pcpos, bool
         if (nresults == LUA_MULTRET)
             build.inst(IrCmd::ADJUST_STACK_TO_REG, build.vmReg(ra), build.constInt(br.actualResultCount));
         else
-            build.inst(IrCmd::MARK_DEAD, build.vmReg(ra + 1), build.constInt(-1));
+            build.inst(IrCmd::MARK_DEAD, build.vmReg(ra + (FFlag::LuauCodegenBuilinDeadRange ? br.actualResultCount : 1)), build.constInt(-1));
 
         if (br.type != BuiltinImplType::UsesFallback)
         {

@@ -8,11 +8,11 @@
 #include <string.h>
 #include <climits>
 
-LUAU_FASTFLAG(LuauCompileDuptableConstantPack2)
 LUAU_FASTFLAG(LuauIntegerType2)
-LUAU_FASTFLAGVARIABLE(LuauCompileUdataDirect)
 LUAU_FASTFLAG(DebugLuauUserDefinedClasses)
 LUAU_FASTFLAG(LuauEmitCallFeedback)
+LUAU_FASTFLAGVARIABLE(LuauVirtualBcBuilder)
+LUAU_FASTFLAGVARIABLE(LuauBytecodeCostModel)
 
 namespace Luau
 {
@@ -80,22 +80,14 @@ bool BytecodeBuilder::StringRef::operator==(const StringRef& other) const
 
 bool BytecodeBuilder::TableShape::operator==(const TableShape& other) const
 {
-    if (!FFlag::LuauCompileDuptableConstantPack2)
+    bool equal = length == other.length && memcmp(keys, other.keys, length * sizeof(keys[0])) == 0 && hasConstants == other.hasConstants;
+
+    if (hasConstants)
     {
-
-        return length == other.length && memcmp(keys, other.keys, length * sizeof(keys[0])) == 0;
+        equal = equal && memcmp(constants, other.constants, length * sizeof(constants[0])) == 0;
     }
-    else
-    {
-        bool equal = length == other.length && memcmp(keys, other.keys, length * sizeof(keys[0])) == 0 && hasConstants == other.hasConstants;
 
-        if (hasConstants)
-        {
-            equal = equal && memcmp(constants, other.constants, length * sizeof(constants[0])) == 0;
-        }
-
-        return equal;
-    }
+    return equal;
 }
 
 size_t BytecodeBuilder::StringRefHash::operator()(const StringRef& v) const
@@ -154,7 +146,7 @@ size_t BytecodeBuilder::TableShapeHash::operator()(const TableShape& v) const
         hash ^= v.keys[i];
         hash *= 16777619;
 
-        if (FFlag::LuauCompileDuptableConstantPack2 && v.hasConstants)
+        if (v.hasConstants)
         {
             hash ^= v.constants[i];
             hash *= 16777619;
@@ -201,7 +193,31 @@ uint32_t BytecodeBuilder::beginFunction(uint8_t numparams, bool isvararg)
     return id;
 }
 
-void BytecodeBuilder::endFunction(uint8_t maxstacksize, uint8_t numupvalues, uint8_t flags)
+void BytecodeBuilder::clearState()
+{
+    insns.clear();
+    lines.clear();
+    constants.clear();
+    protos.clear();
+    jumps.clear();
+    fbSlots.clear();
+    tableShapes.clear();
+
+    debugLocals.clear();
+    debugUpvals.clear();
+
+    typedLocals.clear();
+    typedUpvals.clear();
+
+    constantMap.clear();
+    tableShapeMap.clear();
+    protoMap.clear();
+
+    debugRemarks.clear();
+    debugRemarkBuffer.clear();
+}
+
+void BytecodeBuilder::endFunction(uint8_t maxstacksize, uint8_t numupvalues, uint8_t flags, uint64_t cost)
 {
     LUAU_ASSERT(currentFunction != ~0u);
 
@@ -224,31 +240,38 @@ void BytecodeBuilder::endFunction(uint8_t maxstacksize, uint8_t numupvalues, uin
     if (encoder)
         encoder->encode(insns.data(), insns.size());
 
-    writeFunction(func.data, currentFunction, flags);
+    writeFunction(func.data, currentFunction, flags, cost);
 
     currentFunction = ~0u;
 
     totalInstructionCount += insns.size();
-    insns.clear();
-    lines.clear();
-    constants.clear();
-    protos.clear();
-    jumps.clear();
-    fbSlots.clear();
-    tableShapes.clear();
+    if (FFlag::LuauVirtualBcBuilder)
+    {
+        clearState();
+    }
+    else
+    {
+        insns.clear();
+        lines.clear();
+        constants.clear();
+        protos.clear();
+        jumps.clear();
+        fbSlots.clear();
+        tableShapes.clear();
 
-    debugLocals.clear();
-    debugUpvals.clear();
+        debugLocals.clear();
+        debugUpvals.clear();
 
-    typedLocals.clear();
-    typedUpvals.clear();
+        typedLocals.clear();
+        typedUpvals.clear();
 
-    constantMap.clear();
-    tableShapeMap.clear();
-    protoMap.clear();
+        constantMap.clear();
+        tableShapeMap.clear();
+        protoMap.clear();
 
-    debugRemarks.clear();
-    debugRemarkBuffer.clear();
+        debugRemarks.clear();
+        debugRemarkBuffer.clear();
+    }
 }
 
 void BytecodeBuilder::setMainFunction(uint32_t fid)
@@ -724,13 +747,17 @@ void BytecodeBuilder::finalize()
     writeVarInt(bytecode, uint32_t(functions.size()));
 
     for (const Function& func : functions)
+    {
+        if (FFlag::LuauBytecodeCostModel)
+            writeVarInt(bytecode, func.data.size());
         bytecode += func.data;
+    }
 
     LUAU_ASSERT(mainFunction < functions.size());
     writeVarInt(bytecode, mainFunction);
 }
 
-void BytecodeBuilder::writeFunction(std::string& ss, uint32_t id, uint8_t flags)
+void BytecodeBuilder::writeFunction(std::string& ss, uint32_t id, uint8_t flags, uint64_t cost)
 {
     LUAU_ASSERT(id < functions.size());
     const Function& func = functions[id];
@@ -835,7 +862,7 @@ void BytecodeBuilder::writeFunction(std::string& ss, uint32_t id, uint8_t flags)
         case Constant::Type_Table:
         {
             const TableShape& shape = tableShapes[c.valueTable];
-            if (FFlag::LuauCompileDuptableConstantPack2 && shape.hasConstants)
+            if (shape.hasConstants)
             {
                 writeByte(ss, LBC_CONSTANT_TABLE_WITH_CONSTANTS);
                 writeVarInt(ss, uint32_t(shape.length));
@@ -939,6 +966,13 @@ void BytecodeBuilder::writeFunction(std::string& ss, uint32_t id, uint8_t flags)
             writeVarInt(ss, pc);
         }
     }
+
+    if (FFlag::LuauBytecodeCostModel && (flags & LPF_INLINABLE) != 0)
+    {
+        if (!FFlag::LuauEmitCallFeedback)
+            writeVarInt(ss, 0);
+        writeVarInt(ss, cost);
+    }
 }
 
 void BytecodeBuilder::writeClassShape(std::string& ss, const ClassShape& cs) const
@@ -952,7 +986,7 @@ void BytecodeBuilder::writeClassShape(std::string& ss, const ClassShape& cs) con
         writeVarInt(ss, methodName);
 }
 
-void BytecodeBuilder::writeLineInfo(std::string& ss) const
+int BytecodeBuilder::calcLinesSpan() const
 {
     LUAU_ASSERT(!lines.empty());
 
@@ -984,6 +1018,63 @@ void BytecodeBuilder::writeLineInfo(std::string& ss) const
             span = 1 << log2(int(next - offset));
         }
     }
+    return span;
+}
+
+void BytecodeBuilder::fillBaselineInfo(int span, int* baseline, size_t baselineSize) const
+{
+    for (size_t offset = 0; offset < lines.size(); offset += span)
+    {
+        size_t next = offset;
+
+        int min = lines[offset];
+
+        for (; next < lines.size() && next < offset + span; ++next)
+            min = std::min(min, lines[next]);
+
+        baseline[offset / span] = min;
+    }
+}
+
+void BytecodeBuilder::writeLineInfo(std::string& ss) const
+{
+    LUAU_ASSERT(!lines.empty());
+
+    // this function encodes lines inside each span as a 8-bit delta to span baseline
+    // span is always a power of two; depending on the line info input, it may need to be as low as 1
+    int span = 1 << 24;
+
+    // first pass: determine span length
+    if (FFlag::LuauVirtualBcBuilder)
+    {
+        span = calcLinesSpan();
+    }
+    else
+    {
+        for (size_t offset = 0; offset < lines.size(); offset += span)
+        {
+            size_t next = offset;
+
+            int min = lines[offset];
+            int max = lines[offset];
+
+            for (; next < lines.size() && next < offset + span; ++next)
+            {
+                min = std::min(min, lines[next]);
+                max = std::max(max, lines[next]);
+
+                if (max - min > 255)
+                    break;
+            }
+
+            if (next < lines.size() && next - offset < size_t(span))
+            {
+                // since not all lines in the range fit in 8b delta, we need to shrink the span
+                // next iteration will need to reprocess some lines again since span changed
+                span = 1 << log2(int(next - offset));
+            }
+        }
+    }
 
     // second pass: compute span base
     int baselineOne = 0;
@@ -998,16 +1089,23 @@ void BytecodeBuilder::writeLineInfo(std::string& ss) const
         baseline = baselineScratch.data();
     }
 
-    for (size_t offset = 0; offset < lines.size(); offset += span)
+    if (FFlag::LuauVirtualBcBuilder)
     {
-        size_t next = offset;
+        fillBaselineInfo(span, baseline, baselineSize);
+    }
+    else
+    {
+        for (size_t offset = 0; offset < lines.size(); offset += span)
+        {
+            size_t next = offset;
 
-        int min = lines[offset];
+            int min = lines[offset];
 
-        for (; next < lines.size() && next < offset + span; ++next)
-            min = std::min(min, lines[next]);
+            for (; next < lines.size() && next < offset + span; ++next)
+                min = std::min(min, lines[next]);
 
-        baseline[offset / span] = min;
+            baseline[offset / span] = min;
+        }
     }
 
     // third pass: write resulting data
@@ -1145,10 +1243,10 @@ void BytecodeBuilder::foldJumps()
     }
 }
 
-void BytecodeBuilder::expandJumps()
+std::vector<uint32_t> BytecodeBuilder::expandJumps()
 {
     if (!hasLongJumps)
-        return;
+        return {};
 
     // we have some jump instructions that couldn't be patched which means their offset didn't fit into 16 bits
     // our strategy for replacing instructions is as follows: instead of
@@ -1298,6 +1396,8 @@ void BytecodeBuilder::expandJumps()
 
         typedLocal.startpc = remap[typedLocal.startpc];
     }
+
+    return remap;
 }
 
 std::string BytecodeBuilder::getError(const std::string& message)
@@ -1312,22 +1412,13 @@ std::string BytecodeBuilder::getError(const std::string& message)
 
 uint8_t BytecodeBuilder::getVersion()
 {
+    if (FFlag::LuauBytecodeCostModel)
+        return 12;
     if (FFlag::LuauEmitCallFeedback)
         return 11;
 
     if (FFlag::DebugLuauUserDefinedClasses)
         return 10;
-
-    if (FFlag::LuauCompileUdataDirect)
-        return 9;
-
-    // LBC_CONSTANT_INTEGER requires version 8
-    if (FFlag::LuauIntegerType2)
-        return 8;
-
-    // LBC_CONSTANT_TABLE_WITH_CONSTANTS requires version 7
-    if (FFlag::LuauCompileDuptableConstantPack2)
-        return 7;
 
     return LBC_VERSION_TARGET;
 }
@@ -1335,6 +1426,32 @@ uint8_t BytecodeBuilder::getVersion()
 uint8_t BytecodeBuilder::getTypeEncodingVersion()
 {
     return LBC_TYPE_VERSION_TARGET;
+}
+
+// Virtual functions have to be defined even if LUAU_ASSERTENABLED is off.
+
+void BytecodeBuilder::validateConst(int32_t cid) const
+{
+    LUAU_ASSERT(unsigned(cid) < constants.size());
+}
+
+void BytecodeBuilder::validateConst(int32_t cid, Constant::Type constType) const
+{
+    LUAU_ASSERT(unsigned(cid) < constants.size() && constants[cid].type == constType);
+}
+
+uint8_t BytecodeBuilder::validateProto(int32_t pid) const
+{
+    LUAU_ASSERT(unsigned(pid) < protos.size());
+    LUAU_ASSERT(protos[pid] < functions.size());
+    return functions[protos[pid]].numupvalues;
+}
+
+uint8_t BytecodeBuilder::validateClosure(int32_t cid) const
+{
+    unsigned int proto = constants[cid].valueClosure;
+    LUAU_ASSERT(proto < functions.size());
+    return functions[proto].numupvalues;
 }
 
 #ifdef LUAU_ASSERTENABLED
@@ -1349,8 +1466,10 @@ void BytecodeBuilder::validateInstructions() const
 #define VREG(v) LUAU_ASSERT(unsigned(v) < func.maxstacksize)
 #define VREGRANGE(v, count) LUAU_ASSERT(unsigned(v + (count < 0 ? 0 : count)) <= func.maxstacksize)
 #define VUPVAL(v) LUAU_ASSERT(unsigned(v) < func.numupvalues)
-#define VCONST(v, kind) LUAU_ASSERT(unsigned(v) < constants.size() && constants[v].type == Constant::Type_##kind)
-#define VCONSTANY(v) LUAU_ASSERT(unsigned(v) < constants.size())
+#define VCONST(v, kind) \
+    FFlag::LuauVirtualBcBuilder ? validateConst(v, Constant::Type_##kind) \
+                                : LUAU_ASSERT(unsigned(v) < constants.size() && constants[v].type == Constant::Type_##kind)
+#define VCONSTANY(v) FFlag::LuauVirtualBcBuilder ? validateConst(v) : LUAU_ASSERT(unsigned(v) < constants.size())
 #define VJUMP(v) LUAU_ASSERT(size_t(i + 1 + v) < insns.size() && insnvalid[i + 1 + v])
 
     LUAU_ASSERT(currentFunction != ~0u);
@@ -1457,9 +1576,17 @@ void BytecodeBuilder::validateInstructions() const
         case LOP_NEWCLOSURE:
         {
             VREG(LUAU_INSN_A(insn));
-            LUAU_ASSERT(unsigned(LUAU_INSN_D(insn)) < protos.size());
-            LUAU_ASSERT(protos[LUAU_INSN_D(insn)] < functions.size());
-            unsigned int numupvalues = functions[protos[LUAU_INSN_D(insn)]].numupvalues;
+            unsigned int numupvalues;
+            if (FFlag::LuauVirtualBcBuilder)
+            {
+                numupvalues = validateProto(LUAU_INSN_D(insn));
+            }
+            else
+            {
+                LUAU_ASSERT(unsigned(LUAU_INSN_D(insn)) < protos.size());
+                LUAU_ASSERT(protos[LUAU_INSN_D(insn)] < functions.size());
+                numupvalues = functions[protos[LUAU_INSN_D(insn)]].numupvalues;
+            }
 
             for (unsigned int j = 0; j < numupvalues; ++j)
             {
@@ -1647,9 +1774,17 @@ void BytecodeBuilder::validateInstructions() const
         {
             VREG(LUAU_INSN_A(insn));
             VCONST(LUAU_INSN_D(insn), Closure);
-            unsigned int proto = constants[LUAU_INSN_D(insn)].valueClosure;
-            LUAU_ASSERT(proto < functions.size());
-            unsigned int numupvalues = functions[proto].numupvalues;
+            unsigned int numupvalues;
+            if (FFlag::LuauVirtualBcBuilder)
+            {
+                numupvalues = validateClosure(LUAU_INSN_D(insn));
+            }
+            else
+            {
+                unsigned int proto = constants[LUAU_INSN_D(insn)].valueClosure;
+                LUAU_ASSERT(proto < functions.size());
+                numupvalues = functions[proto].numupvalues;
+            }
 
             for (unsigned int j = 0; j < numupvalues; ++j)
             {

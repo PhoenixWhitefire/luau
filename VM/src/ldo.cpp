@@ -17,9 +17,7 @@
 
 #include <string.h>
 
-LUAU_FASTFLAG(LuauClosureUsageCounter)
 LUAU_FASTFLAG(LuauYieldIter2)
-LUAU_FASTFLAGVARIABLE(LuauResumeRestoreCcalls)
 LUAU_FASTFLAG(LuauCustomYieldablePcalls)
 
 // keep max stack allocation request under 1GB
@@ -559,12 +557,6 @@ static void resume_handle(lua_State* L, void* ud)
     LUAU_ASSERT(cl->isC && cl->c.cont);
     LUAU_ASSERT(L->status != 0);
 
-    if (!FFlag::LuauResumeRestoreCcalls)
-    {
-        // restore nCcalls back to base since this might not have happened during error handling
-        L->nCcalls = L->baseCcalls;
-    }
-
     // make sure we don't run the handler the second time
     ci->flags &= ~LUA_CALLINFO_HANDLE;
 
@@ -699,22 +691,16 @@ static int resume_finish(lua_State* L, int status, int oldnCcalls)
             }
         }
 
-        if (FFlag::LuauResumeRestoreCcalls)
-        {
-            // restore the baseline we established in resume_start
-            L->nCcalls = oldnCcalls;
-            L->baseCcalls = L->nCcalls;
-        }
+        // restore the baseline we established in resume_start
+        L->nCcalls = oldnCcalls;
+        L->baseCcalls = L->nCcalls;
 
         L->status = cast_byte(status);
         status = luaD_rawrunprotected(L, resume_handle, ch);
     }
 
     // C call count base was set to an incremented value of C call count in resume, so we decrement here
-    if (FFlag::LuauResumeRestoreCcalls)
-        L->nCcalls = oldnCcalls - 1;
-    else
-        L->nCcalls = --L->baseCcalls;
+    L->nCcalls = oldnCcalls - 1;
 
     // make execution context non-yieldable as we are leaving the resume
     L->baseCcalls = L->nCcalls;
@@ -800,18 +786,6 @@ int luaD_pcall(lua_State* L, Pfunc func, void* u, ptrdiff_t old_top, ptrdiff_t e
     if (status != 0)
     {
         int errstatus = status;
-
-        if (FFlag::LuauClosureUsageCounter)
-        {
-            CallInfo* lastci = L->ci;
-            CallInfo* savedci = restoreci(L, old_ci);
-            while (lastci != savedci)
-            {
-                LUAU_ASSERT(clvalue(lastci->func)->usage > 0);
-                clvalue(lastci->func)->usage--;
-                lastci--;
-            }
-        }
 
         // call user-defined error function (used in xpcall)
         if (ef)

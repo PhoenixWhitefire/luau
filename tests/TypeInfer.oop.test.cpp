@@ -15,7 +15,6 @@
 using namespace Luau;
 
 LUAU_FASTFLAG(DebugLuauForceOldSolver)
-LUAU_FASTFLAG(LuauConst2)
 LUAU_FASTFLAG(LuauExportValueSyntax)
 LUAU_FASTFLAG(LuauFixPropReadsOnMetatableTypes)
 LUAU_FASTFLAG(LuauTweakAccessViolationReporting)
@@ -165,9 +164,9 @@ TEST_CASE_FIXTURE(Fixture, "inferring_hundreds_of_self_calls_should_not_suffocat
 
     ModulePtr module = getMainModule();
     if (!FFlag::DebugLuauForceOldSolver)
-        CHECK_GE(80, module->internalTypes.types.size());
+        CHECK_GE(80, module->internalTypes->types.size());
     else
-        CHECK_GE(50, module->internalTypes.types.size());
+        CHECK_GE(50, module->internalTypes->types.size());
 }
 
 TEST_CASE_FIXTURE(Fixture, "pass_too_many_arguments")
@@ -1105,7 +1104,6 @@ TEST_CASE_FIXTURE(Fixture, "prop_with_typeof_reassigned_class")
     ScopedFastFlag sffs[] = {
         {FFlag::DebugLuauForceOldSolver, false},
         {FFlag::DebugLuauUserDefinedClasses, true},
-        {FFlag::LuauConst2, true},
         {FFlag::LuauExportValueSyntax, true},
     };
 

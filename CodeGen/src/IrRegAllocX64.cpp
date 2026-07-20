@@ -1,6 +1,7 @@
 // This file is part of the Luau programming language and is licensed under MIT License; see LICENSE.txt for details
 #include "Luau/IrRegAllocX64.h"
 
+#include "Luau/IrDump.h"
 #include "Luau/IrUtils.h"
 #include "Luau/LoweringStats.h"
 
@@ -8,7 +9,8 @@
 
 #include "lstate.h"
 
-LUAU_FASTFLAG(LuauCodegenVmExitSync)
+LUAU_FASTFLAG(DebugCodegenLimitRegs)
+
 LUAU_FASTFLAGVARIABLE(LuauCodegenNoEcbData)
 
 namespace Luau
@@ -23,11 +25,12 @@ static_assert(sizeof(kValueDwordSize) / sizeof(kValueDwordSize[0]) == size_t(IrV
 
 static const RegisterX64 kGprAllocOrder[] = {rax, rdx, rcx, rbx, rsi, rdi, r8, r9, r10, r11};
 
-IrRegAllocX64::IrRegAllocX64(AssemblyBuilderX64& build, IrFunction& function, LoweringStats* stats)
-    : build(build)
+IrRegAllocX64::IrRegAllocX64(LogBuilder* logger, AssemblyBuilderX64& build, IrFunction& function, LoweringStats* stats)
+    : logger(logger)
+    , build(build)
     , function(function)
     , stats(stats)
-    , usableXmmRegCount(getXmmRegisterCount(build.abi))
+    , usableXmmRegCount(FFlag::DebugCodegenLimitRegs ? kLimitedSimdRegCount : getXmmRegisterCount(build.abi))
 {
     freeGprMap.fill(true);
     gprInstUsers.fill(kInvalidInstIdx);
@@ -37,8 +40,7 @@ IrRegAllocX64::IrRegAllocX64(AssemblyBuilderX64& build, IrFunction& function, Lo
 
 RegisterX64 IrRegAllocX64::allocReg(SizeX64 size, uint32_t instIdx)
 {
-    if (FFlag::LuauCodegenVmExitSync)
-        allocActionCount++;
+    allocActionCount++;
 
     if (size == SizeX64::xmmword)
     {
@@ -54,13 +56,30 @@ RegisterX64 IrRegAllocX64::allocReg(SizeX64 size, uint32_t instIdx)
     }
     else
     {
-        for (RegisterX64 reg : kGprAllocOrder)
+        if (FFlag::DebugCodegenLimitRegs)
         {
-            if (freeGprMap[reg.index])
+            for (size_t i = 0; i < kLimitedGprRegCount; ++i)
             {
-                freeGprMap[reg.index] = false;
-                gprInstUsers[reg.index] = instIdx;
-                return RegisterX64{size, reg.index};
+                RegisterX64 reg = kGprAllocOrder[i];
+
+                if (freeGprMap[reg.index])
+                {
+                    freeGprMap[reg.index] = false;
+                    gprInstUsers[reg.index] = instIdx;
+                    return RegisterX64{size, reg.index};
+                }
+            }
+        }
+        else
+        {
+            for (RegisterX64 reg : kGprAllocOrder)
+            {
+                if (freeGprMap[reg.index])
+                {
+                    freeGprMap[reg.index] = false;
+                    gprInstUsers[reg.index] = instIdx;
+                    return RegisterX64{size, reg.index};
+                }
             }
         }
     }
@@ -391,6 +410,17 @@ void IrRegAllocX64::preserve(IrInst& inst)
 
         if (stats)
             stats->spillsToSlot++;
+
+        if (logger && logger->options.includeRegSpills)
+        {
+            const char* kindName = getValueKindName(spill.valueKind);
+            const char* regName = AssemblyBuilderX64::getRegisterName(spill.originalLoc);
+
+            if (logger->options.includeAssembly)
+                logger->formatAppendWithPrefix("  ; spill %%%u (%s %s) to slot %u\n", spill.instIdx, kindName, regName, spill.stackSlot);
+            else
+                logger->formatAppendWithPrefix("  ; spill %%%u (%s) to slot %u\n", spill.instIdx, kindName, spill.stackSlot);
+        }
     }
     else
     {
@@ -426,6 +456,27 @@ void IrRegAllocX64::preserve(IrInst& inst)
 
         if (stats)
             stats->spillsToRestore++;
+
+        if (logger && logger->options.includeRegSpills)
+        {
+            const char* kindName = getValueKindName(spill.valueKind);
+            const char* regName = AssemblyBuilderX64::getRegisterName(spill.originalLoc);
+
+            if (logger->options.includeAssembly)
+                logger->formatAppendWithPrefix("  ; evict %%%u (%s %s) into ", spill.instIdx, kindName, regName);
+            else
+                logger->formatAppendWithPrefix("  ; evict %%%u (%s) into ", spill.instIdx, kindName);
+
+            if (loc.op.kind == IrOpKind::VmReg)
+                logger->formatAppend("R%d", vmRegOp(loc.op));
+            else if (loc.op.kind == IrOpKind::VmConst)
+                logger->formatAppend("K%d", vmConstOp(loc.op));
+
+            if (loc.lazy)
+                logger->append(" [lazy]");
+
+            logger->append("\n");
+        }
     }
 
     spills.push_back(spill);
@@ -527,6 +578,25 @@ void IrRegAllocX64::restore(IrInst& inst, bool intoOriginalLocation)
             {
                 if (reg.size == SizeX64::xmmword)
                     build.mov(emergencyTemp, qword[sTemporarySlot + 0]);
+            }
+
+            if (logger && logger->options.includeRegSpills)
+            {
+                const char* kindName = getValueKindName(spill.valueKind);
+                const char* regName = AssemblyBuilderX64::getRegisterName(reg);
+                const char* conv = getConversionCmdSuffix(restoreLocation.conversionCmd);
+
+                if (logger->options.includeAssembly)
+                    logger->formatAppendWithPrefix("  ; restore %%%u (%s %s) from ", instIdx, kindName, regName);
+                else
+                    logger->formatAppendWithPrefix("  ; restore %%%u (%s) from ", instIdx, kindName);
+
+                if (spill.stackSlot != kNoStackSlot)
+                    logger->formatAppend("slot %u\n", spill.stackSlot);
+                else if (restoreLocation.op.kind == IrOpKind::VmReg)
+                    logger->formatAppend("R%d%s\n", vmRegOp(restoreLocation.op), conv);
+                else if (restoreLocation.op.kind == IrOpKind::VmConst)
+                    logger->formatAppend("K%d%s\n", vmConstOp(restoreLocation.op), conv);
             }
 
             inst.regX64 = reg;
@@ -672,7 +742,7 @@ uint32_t IrRegAllocX64::findInstructionWithFurthestNextUse(const std::array<uint
         uint32_t nextUse = getNextInstUse(function, regInstUser, currInstIdx, inVmExitSync);
 
         // Cannot spill value that is about to be used in the current instruction
-        if (nextUse == currInstIdx && (!FFlag::LuauCodegenVmExitSync || !inVmExitSync))
+        if (nextUse == currInstIdx && !inVmExitSync)
             continue;
 
         if (furthestUseTarget == kInvalidInstIdx || nextUse > furthestUseLocation)

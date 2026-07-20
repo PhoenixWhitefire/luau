@@ -137,7 +137,9 @@ struct FunctionCheckConstraint
 // then FreeType is replaced by its lower bound
 //
 // else FreeType is replaced by PrimitiveType
-struct PrimitiveTypeConstraint
+//
+// Clip with LuauRemovePrimitiveTypeConstraint
+struct DEPRECATED_PrimitiveTypeConstraint
 {
     TypeId freeType;
 
@@ -324,7 +326,7 @@ using ConstraintV = Variant<
     TypeAliasExpansionConstraint,
     FunctionCallConstraint,
     FunctionCheckConstraint,
-    PrimitiveTypeConstraint,
+    DEPRECATED_PrimitiveTypeConstraint,
     HasPropConstraint,
     HasIndexerConstraint,
     AssignPropConstraint,
@@ -348,9 +350,6 @@ struct Constraint
     NotNull<Scope> scope;
     Location location;
     ConstraintV c;
-
-    // Clip with LuauConstraintGraph
-    std::vector<NotNull<Constraint>> DEPRECATED_dependencies;
 
     /**
      * Return the types and type packs that may be mutated by this constraint.
@@ -403,7 +402,6 @@ struct ReferenceCountInitializer : TypeOnceVisitor
 
     bool visit(TypePackId tp, const BlockedTypePack&) override;
     bool visit(TypePackId tp, const FreeTypePack&) override;
-
 };
 
 } // namespace Luau

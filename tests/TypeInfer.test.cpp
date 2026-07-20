@@ -18,7 +18,6 @@
 LUAU_DYNAMIC_FASTINT(LuauConstraintGeneratorRecursionLimit)
 LUAU_DYNAMIC_FASTINT(LuauSubtypingRecursionLimit)
 
-LUAU_FASTFLAG(LuauFixLocationSpanTableIndexExpr)
 LUAU_FASTFLAG(DebugLuauForceOldSolver)
 LUAU_FASTFLAG(LuauInstantiateInSubtyping)
 LUAU_FASTINT(LuauCheckRecursionLimit)
@@ -26,15 +25,14 @@ LUAU_FASTINT(LuauNormalizeCacheLimit)
 LUAU_FASTINT(LuauRecursionLimit)
 LUAU_FASTINT(LuauTypeInferTypePackLoopLimit)
 LUAU_FASTINT(LuauTypeInferRecursionLimit)
-LUAU_FASTFLAG(LuauDfgAllowUpdatesInLoops)
 LUAU_FASTFLAG(DebugLuauMagicTypes)
-LUAU_FASTFLAG(LuauMissingFollowMappedGenericPacks)
-LUAU_FASTFLAG(LuauTryToOptimizeSetTypeUnification)
 LUAU_FASTFLAG(DebugLuauForbidInternalTypes)
-LUAU_FASTFLAG(LuauInstantiationUsesGenericPolarityFollow)
-LUAU_FASTFLAG(LuauRefineNilFromTableIndexerResultType)
 LUAU_FASTFLAG(LuauInstantiationUsesPolarity)
 LUAU_FASTFLAG(LuauCollapseDirectBoundCycles)
+LUAU_FASTFLAG(LuauSubtypingMissingPropertiesAsNil)
+LUAU_FASTFLAG(LuauImproveUniqueTableWidthSubtyping)
+LUAU_FASTFLAG(LuauDontBindOptionalGenericToNil)
+LUAU_FASTFLAG(LuauBidirectionalInferenceSimplifyTables)
 
 using namespace Luau;
 
@@ -1614,8 +1612,6 @@ TEST_CASE_FIXTURE(BuiltinsFixture, "lti_must_record_contributing_locations")
  */
 TEST_CASE_FIXTURE(BuiltinsFixture, "be_sure_to_use_active_txnlog_when_evaluating_a_variadic_overload")
 {
-    DOES_NOT_PASS_NEW_SOLVER_GUARD();
-
     CheckResult result = check(R"(
         local function concat<T>(target: {T}, ...: {T} | T): {T}
             return (nil :: any) :: {T}
@@ -2274,7 +2270,7 @@ end
 TEST_CASE_FIXTURE(Fixture, "self_bound_due_to_compound_assign")
 {
     loadDefinition(R"(
-        declare class Camera
+        declare extern type Camera with
             CameraType: string
             CFrame: number
         end
@@ -2775,10 +2771,7 @@ TEST_CASE_FIXTURE(BuiltinsFixture, "fuzzer_missing_follow_in_instantiation2")
 
 TEST_CASE_FIXTURE(BuiltinsFixture, "iterate_over_table_with_optional_indexer_values")
 {
-    ScopedFastFlag sffs[] = {
-        {FFlag::LuauRefineNilFromTableIndexerResultType, true},
-        {FFlag::DebugLuauForceOldSolver, false},
-    };
+    ScopedFastFlag sff{FFlag::DebugLuauForceOldSolver, false};
 
     CheckResult result = check(R"(
         --!strict
@@ -2797,10 +2790,7 @@ TEST_CASE_FIXTURE(BuiltinsFixture, "iterate_over_table_with_optional_indexer_val
 
 TEST_CASE_FIXTURE(BuiltinsFixture, "iterate_over_local_table_with_optional_indexer_values")
 {
-    ScopedFastFlag sffs[] = {
-        {FFlag::LuauRefineNilFromTableIndexerResultType, true},
-        {FFlag::DebugLuauForceOldSolver, false},
-    };
+    ScopedFastFlag sff{FFlag::DebugLuauForceOldSolver, false};
 
     CheckResult result = check(R"(
         --!strict
@@ -2819,10 +2809,7 @@ TEST_CASE_FIXTURE(BuiltinsFixture, "iterate_over_local_table_with_optional_index
 // https://github.com/luau-lang/luau/issues/2236
 TEST_CASE_FIXTURE(BuiltinsFixture, "2236_iterate_over_table_with_values_as_optional_types")
 {
-    ScopedFastFlag sffs[] = {
-        {FFlag::LuauRefineNilFromTableIndexerResultType, true},
-        {FFlag::DebugLuauForceOldSolver, false},
-    };
+    ScopedFastFlag sff{FFlag::DebugLuauForceOldSolver, false};
 
     CheckResult result = check(R"(
         --!strict
@@ -3004,6 +2991,84 @@ TEST_CASE_FIXTURE(Fixture, "fuzzer_export_no_ice")
             export local _
             _ = _
         end
+    )"));
+}
+
+TEST_CASE_FIXTURE(Fixture, "generic_P_inference_with_optional_param_does_not_leak_nil")
+{
+    ScopedFastFlag sffs[] = {
+        {FFlag::DebugLuauForceOldSolver, false},
+        {FFlag::LuauDontBindOptionalGenericToNil, true},
+    };
+
+    // Width subtyping: passing a table that lacks an optional field to a component
+    // that declares it as optional should be fine.
+    LUAU_REQUIRE_NO_ERRORS(check(R"(
+        local function createElement<P>(component: (P) -> any, props: P?): any
+            return nil
+        end
+
+        local function MyComponent(props: { x: number, y: number? })
+            return nil
+        end
+
+        createElement(MyComponent, { x = 1 })
+    )"));
+}
+
+TEST_CASE_FIXTURE(Fixture, "generic_P_with_intersection_props_and_partial_table")
+{
+    DOES_NOT_PASS_OLD_SOLVER_GUARD();
+
+    ScopedFastFlag sffs[] = {
+        {FFlag::LuauDontBindOptionalGenericToNil, true},
+        {FFlag::LuauSubtypingMissingPropertiesAsNil, true},
+        {FFlag::LuauBidirectionalInferenceSimplifyTables, true},
+    };
+
+    // When a component's props are an intersection of table types with optional
+    // fields, passing a table with only a subset of those fields should work.
+    // { tag: string } should satisfy { tag: string? } & { b1: number? }
+    // because both fields in the intersection are optional.
+    LUAU_REQUIRE_NO_ERRORS(check(R"(
+        type BaseProps = { tag: string? }
+        type ExtraProps = { b1: number? }
+
+        local function Image(props: BaseProps & ExtraProps)
+            return nil
+        end
+
+        local function createElement<P>(component: (P) -> any, props: P?): any
+            return nil
+        end
+
+        local _x = createElement(Image, { tag = "test" })
+    )"));
+}
+
+TEST_CASE_FIXTURE(Fixture, "generic_P_widening_with_recursive_optional_field")
+{
+    DOES_NOT_PASS_OLD_SOLVER_GUARD();
+
+    ScopedFastFlag sffs[] = {
+        {FFlag::LuauDontBindOptionalGenericToNil, true},
+        {FFlag::LuauSubtypingMissingPropertiesAsNil, true},
+        {FFlag::LuauBidirectionalInferenceSimplifyTables, true},
+    };
+
+    // When a component has a recursive optional field (like React's children),
+    // widening the table literal should not cause the bounds check to fail.
+    LUAU_REQUIRE_NO_ERRORS(check(R"(
+        type Node = string | number | { [string]: Node }
+        type BaseProps = { tag: string?, children: Node? }
+        type ExtraProps = { size: number? }
+        local function View(props: BaseProps & ExtraProps)
+            return nil
+        end
+        local function createElement<P>(component: (P) -> any, props: P?): any
+            return nil
+        end
+        local _x = createElement(View, { tag = "hello" })
     )"));
 }
 

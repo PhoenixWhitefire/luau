@@ -22,11 +22,11 @@ using namespace Luau;
 
 LUAU_FASTINT(LuauParseErrorLimit)
 
-LUAU_FASTFLAG(LuauBetterReverseDependencyTracking)
 LUAU_FASTFLAG(DebugLuauForceOldSolver)
-LUAU_FASTFLAG(LuauAutocompleteStringSingletonIntersection)
 LUAU_FASTFLAG(DebugLuauUserDefinedClasses)
 LUAU_FASTFLAG(LuauAllowGlobalDeclarationToBeCalledClass)
+LUAU_FASTFLAG(LuauAutocompleteMetatableInheritance)
+LUAU_FASTFLAG(LuauAutocompleteSkipErrorTypeInUnion)
 
 static std::optional<AutocompleteEntryMap> nullCallback(std::string tag, std::optional<const ExternType*> ptr, std::optional<std::string> contents)
 {
@@ -329,7 +329,7 @@ struct FragmentAutocompleteBuiltinsFixture : FragmentAutocompleteFixtureImpl<Bui
         Luau::unfreeze(f.globals.globalTypes);
         Luau::unfreeze(f.globalsForAutocomplete.globalTypes);
         const std::string fakeVecDecl = R"(
-declare class FakeVec
+declare extern type FakeVec with
     function dot(self, x: FakeVec) : FakeVec
     zero : FakeVec
 end
@@ -1603,6 +1603,34 @@ tbl.
     CHECK_EQ(1, fragment.result->acResults.entryMap.size());
     CHECK(fragment.result->acResults.entryMap.count("abc"));
     CHECK_EQ(AutocompleteContext::Property, fragment.result->acResults.context);
+}
+
+TEST_CASE_FIXTURE(FragmentAutocompleteFixture, "autocomplete_props_through_metatable_typed_metatable")
+{
+    ScopedFastFlag sff{FFlag::LuauAutocompleteMetatableInheritance, true};
+
+    const std::string source = R"(
+local Base = { baseProp = 5 }
+local Meta = setmetatable({ __index = Base }, {})
+local obj = setmetatable({}, Meta)
+)";
+    const std::string updated = R"(
+local Base = { baseProp = 5 }
+local Meta = setmetatable({ __index = Base }, {})
+local obj = setmetatable({}, Meta)
+obj. @1
+)";
+
+    autocompleteFragmentInNewSolver(
+        source,
+        updated,
+        '1',
+        [](FragmentAutocompleteStatusResult& fragment)
+        {
+            REQUIRE(fragment.result);
+            CHECK(fragment.result->acResults.entryMap.count("baseProp"));
+        }
+    );
 }
 
 TEST_CASE_FIXTURE(FragmentAutocompleteBuiltinsFixture, "typecheck_fragment_handles_unusable_module")
@@ -3052,7 +3080,7 @@ TEST_CASE_FIXTURE(FragmentAutocompleteFixture, "fragment_autocomplete_ensures_me
         LUAU_ASSERT(srcId);
 
         CHECK((*fragId)->owningArena != (*srcId)->owningArena);
-        CHECK(&(frag.result->incrementalModule->internalTypes) == (*fragId)->owningArena);
+        CHECK(frag.result->incrementalModule->internalTypes.get() == (*fragId)->owningArena);
     };
 
     const std::string source = R"(local module = {}
@@ -4802,10 +4830,6 @@ TEST_CASE_FIXTURE(FragmentAutocompleteFixture, "fragment_autocomplete_using_func
 
 TEST_CASE_FIXTURE(FragmentAutocompleteFixture, "fragment_autocomplete_string_singleton_intersection_param")
 {
-    ScopedFastFlag sffs[] = {
-        {FFlag::LuauAutocompleteStringSingletonIntersection, true},
-    };
-
     std::string source = R"(
         local function C(_: "Example"&"Example") end
     )";
@@ -4829,8 +4853,6 @@ TEST_CASE_FIXTURE(FragmentAutocompleteFixture, "fragment_autocomplete_string_sin
 
 TEST_CASE_FIXTURE(FragmentAutocompleteFixture, "fragment_autocomplete_string_singleton_intersection_variable_annotation")
 {
-    ScopedFastFlag sff{FFlag::LuauAutocompleteStringSingletonIntersection, true};
-
     std::string source = R"(
         local _: "foo"&"foo"
     )";
@@ -5462,6 +5484,45 @@ end
             REQUIRE(frag.result);
             CHECK(frag.result->acResults.entryMap.count("x"));
             CHECK(frag.result->acResults.entryMap.count("y"));
+        }
+    );
+}
+
+TEST_CASE_FIXTURE(FragmentAutocompleteFixture, "fragment_ac_on_nonexistent_table")
+{
+    ScopedFastFlag _{FFlag::LuauAutocompleteSkipErrorTypeInUnion, true};
+
+    const std::string source = R"(
+        local mygame = {}
+
+        local char = (nil :: any) :: {
+            Humanoid: {
+                Animator: number
+            }
+        } & typeof(mygame.interesting)
+    )";
+
+    const std::string updated = R"(
+        local mygame = {}
+
+        local char = (nil :: any) :: {
+            Humanoid: {
+                Animator: number
+            }
+        } & typeof(mygame.interesting)
+
+        char.Humanoid.@1
+    )";
+
+    // In the old solver, we effectively infer `never` for the type of `char`.
+    autocompleteFragmentInNewSolver(
+        source,
+        updated,
+        '1',
+        [](FragmentAutocompleteStatusResult& frag)
+        {
+            REQUIRE(frag.result);
+            CHECK(frag.result->acResults.entryMap.count("Animator"));
         }
     );
 }

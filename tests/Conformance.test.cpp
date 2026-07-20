@@ -5,6 +5,7 @@
 #include "lualib.h"
 #include "luacode.h"
 #include "luacodegen.h"
+#include "luajitinliner.h"
 
 #include "Luau/BuiltinDefinitions.h"
 #include "Luau/DenseHash.h"
@@ -38,6 +39,7 @@
 
 extern bool verbose;
 extern bool codegen;
+extern bool jitInliner;
 extern int optimizationLevel;
 
 // internal functions, declared in lgc.h - not exposed via lua.h
@@ -47,9 +49,14 @@ void luaC_validate(lua_State* L);
 // internal functions, declared in lvm.h - not exposed via lua.h
 void luau_callhook(lua_State* L, lua_Hook hook, void* userdata);
 
+#if LUA_VECTOR_SIZE == 4
+#define lua_pushvector3(L, x, y, z) lua_pushvector(L, x, y, z, 0.0)
+#else
+#define lua_pushvector3(L, x, y, z) lua_pushvector(L, x, y, z)
+#endif
+
 LUAU_FASTFLAG(DebugLuauAbortingChecks)
 LUAU_FASTINT(CodegenHeuristicsInstructionLimit)
-LUAU_FASTFLAG(LuauResumeRestoreCcalls)
 LUAU_FASTFLAG(LuauIntegerLibrary)
 LUAU_FASTFLAG(LuauIntegerType2)
 LUAU_FASTFLAG(DebugLuauForceOldSolver)
@@ -61,6 +68,9 @@ LUAU_FASTFLAG(LuauCustomYieldablePcalls)
 LUAU_FASTFLAG(DebugLuauUserDefinedClassesRuntime)
 LUAU_FASTFLAG(LuauAutoStack)
 LUAU_FASTFLAG(LuauUdataMetatablePinned)
+LUAU_DYNAMIC_FASTFLAG(LuauGcTableStepFix)
+LUAU_FASTFLAG(LuauCodegenFixTwoResA64Builtin)
+LUAU_FASTFLAG(LuauMathRoundNegZero)
 
 #ifndef LUAU_CONFORMANCE_SOURCE_DIR
 // Walks up from the current directory looking for the Client folder,
@@ -280,6 +290,9 @@ static StateRef runConformance(
 
     if (codegen && !skipCodegen && luau_codegen_supported())
         luau_codegen_create(L);
+
+    if (jitInliner)
+        luau_enable_jit_inliner(L);
 
     luaL_openlibs(L);
 
@@ -512,12 +525,7 @@ Vec2* lua_vec2_push(lua_State* L)
 
 Vec2* lua_vec2_get(lua_State* L, int idx)
 {
-    Vec2* a = (Vec2*)lua_touserdatatagged(L, idx, kTagVec2);
-
-    if (a)
-        return a;
-
-    luaL_typeerror(L, idx, "vec2");
+    return (Vec2*)luaL_checkudatatagged(L, idx, kTagVec2);
 }
 
 static int lua_vec2(lua_State* L)
@@ -664,6 +672,7 @@ Vertex* lua_vertex_push(lua_State* L)
 
 Vertex* lua_vertex_get(lua_State* L, int idx)
 {
+    // Intentionally not using `luaL_checkudatatagged` for coverage
     Vertex* a = (Vertex*)lua_touserdatatagged(L, idx, kTagVertex);
 
     if (a)
@@ -706,13 +715,13 @@ static int lua_vertex_index(lua_State* L)
 
     if (strcmp(name, "pos") == 0)
     {
-        lua_pushvector(L, v->pos[0], v->pos[1], v->pos[2]);
+        lua_pushvector3(L, v->pos[0], v->pos[1], v->pos[2]);
         return 1;
     }
 
     if (strcmp(name, "normal") == 0)
     {
-        lua_pushvector(L, v->normal[0], v->normal[1], v->normal[2]);
+        lua_pushvector3(L, v->normal[0], v->normal[1], v->normal[2]);
         return 1;
     }
 
@@ -789,6 +798,9 @@ void setupUserdataHelpers(lua_State* L)
 
     lua_pushvalue(L, -1);
     lua_setuserdatametatable(L, kTagVec2);
+
+    lua_pushliteral(L, "vec2");
+    lua_setfield(L, -2, "__type");
 
     lua_pushcfunction(L, lua_vec2_index, nullptr);
     lua_setfield(L, -2, "__index");
@@ -1063,7 +1075,6 @@ static int vec2DirectNamecall(lua_State* L, void* data, int atom, uint16_t* cach
     default:
         luaL_error(L, "%s is not a valid method of vec2", lua_namecallatom(L, nullptr));
     }
-    return 0;
 }
 
 static void vertexDirectIndex(lua_State* L, void* data, int atom, uint16_t* cachedslot, int utag)
@@ -1076,10 +1087,10 @@ static void vertexDirectIndex(lua_State* L, void* data, int atom, uint16_t* cach
     switch (DirectSlot(*cachedslot))
     {
     case DirectSlot::Pos:
-        lua_pushvector(L, self->pos[0], self->pos[1], self->pos[2]);
+        lua_pushvector3(L, self->pos[0], self->pos[1], self->pos[2]);
         break;
     case DirectSlot::Normal:
-        lua_pushvector(L, self->normal[0], self->normal[1], self->normal[2]);
+        lua_pushvector3(L, self->normal[0], self->normal[1], self->normal[2]);
         break;
     case DirectSlot::UV:
     {
@@ -1147,7 +1158,6 @@ static int vertexDirectNamecall(lua_State* L, void* data, int atom, uint16_t* ca
     default:
         luaL_error(L, "%s is not a valid method of vertex", lua_namecallatom(L, nullptr));
     }
-    return 0;
 }
 
 static void setupNativeHelpers(lua_State* L)
@@ -1238,6 +1248,9 @@ TEST_CASE("Buffers")
 
 TEST_CASE("Math")
 {
+    ScopedFastFlag luauCodegenFixTwoResA64Builtin{FFlag::LuauCodegenFixTwoResA64Builtin, true};
+    ScopedFastFlag luauMathRoundNegZero{FFlag::LuauMathRoundNegZero, true};
+
     runConformance("math.luau");
 }
 
@@ -1269,8 +1282,6 @@ TEST_CASE("Integers")
         }
     }
 }
-
-
 
 TEST_CASE("Tables")
 {
@@ -1397,6 +1408,8 @@ static void* blockableRealloc(void* ud, void* ptr, size_t osize, size_t nsize)
 
 TEST_CASE("GC")
 {
+    ScopedFastFlag luauGcTableStepFix{DFFlag::LuauGcTableStepFix, true};
+
     runConformance(
         "gc.luau",
         [](lua_State* L)
@@ -1445,8 +1458,6 @@ static int cxxthrow(lua_State* L)
 
 TEST_CASE("PCall")
 {
-    ScopedFastFlag luauResumeRestoreCcalls{FFlag::LuauResumeRestoreCcalls, true};
-
     runConformance(
         "pcall.luau",
         [](lua_State* L)
@@ -1736,7 +1747,6 @@ int pcallThenXCallContinuation(lua_State* L, int status)
 
 TEST_CASE("CYield")
 {
-    ScopedFastFlag luauResumeRestoreCcalls{FFlag::LuauResumeRestoreCcalls, true};
     ScopedFastFlag luauCustomYieldablePcalls{FFlag::LuauCustomYieldablePcalls, true};
 
     runConformance(
@@ -1943,6 +1953,8 @@ static void populateRTTI(lua_State* L, Luau::TypeId type)
 
 TEST_CASE("Types")
 {
+    ScopedFastFlag integerType{FFlag::LuauIntegerType2, true};
+
     runConformance(
         "types.luau",
         [](lua_State* L)
@@ -3774,15 +3786,15 @@ TEST_CASE("Userdata")
             // create metatable with all the metamethods
             luaL_newmetatable(L, "int64");
 
+            lua_pushliteral(L, "int64");
+            lua_setfield(L, -2, "__type");
+
             // __index
             lua_pushcfunction(
                 L,
                 [](lua_State* L)
                 {
-                    void* p = lua_touserdatatagged(L, 1, kInt64Tag);
-                    if (!p)
-                        luaL_typeerror(L, 1, "int64");
-
+                    void* p = luaL_checkudatatagged(L, 1, kInt64Tag);
                     const char* name = luaL_checkstring(L, 2);
 
                     if (strcmp(name, "value") == 0)
@@ -3802,10 +3814,7 @@ TEST_CASE("Userdata")
                 L,
                 [](lua_State* L)
                 {
-                    void* p = lua_touserdatatagged(L, 1, kInt64Tag);
-                    if (!p)
-                        luaL_typeerror(L, 1, "int64");
-
+                    void* p = luaL_checkudatatagged(L, 1, kInt64Tag);
                     const char* name = luaL_checkstring(L, 2);
 
                     if (strcmp(name, "value") == 0)

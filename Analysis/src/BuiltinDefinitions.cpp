@@ -41,7 +41,7 @@ struct MagicSelect final : MagicFunction
         const class AstExprCall&,
         WithPredicate<TypePackId>
     ) override;
-    bool infer(const MagicFunctionCallContext& ctx) override;
+    bool infer(const MagicFunctionCallContext& context) override;
 };
 
 struct MagicSetMetatable final : MagicFunction
@@ -74,7 +74,7 @@ struct MagicPack final : MagicFunction
         const class AstExprCall&,
         WithPredicate<TypePackId>
     ) override;
-    bool infer(const MagicFunctionCallContext& ctx) override;
+    bool infer(const MagicFunctionCallContext& context) override;
 };
 
 struct MagicClone final : MagicFunction
@@ -85,7 +85,7 @@ struct MagicClone final : MagicFunction
         const class AstExprCall&,
         WithPredicate<TypePackId>
     ) override;
-    bool infer(const MagicFunctionCallContext& ctx) override;
+    bool infer(const MagicFunctionCallContext& context) override;
 };
 
 struct MagicFreeze final : MagicFunction
@@ -96,7 +96,7 @@ struct MagicFreeze final : MagicFunction
         const class AstExprCall&,
         WithPredicate<TypePackId>
     ) override;
-    bool infer(const MagicFunctionCallContext& ctx) override;
+    bool infer(const MagicFunctionCallContext& context) override;
     bool typeCheck(const MagicFunctionTypeCheckContext& ctx) override;
 };
 
@@ -108,8 +108,8 @@ struct MagicFormat final : MagicFunction
         const class AstExprCall&,
         WithPredicate<TypePackId>
     ) override;
-    bool infer(const MagicFunctionCallContext& ctx) override;
-    bool typeCheck(const MagicFunctionTypeCheckContext& ctx) override;
+    bool infer(const MagicFunctionCallContext& context) override;
+    bool typeCheck(const MagicFunctionTypeCheckContext& context) override;
 };
 
 struct MagicMatch final : MagicFunction
@@ -120,7 +120,7 @@ struct MagicMatch final : MagicFunction
         const class AstExprCall&,
         WithPredicate<TypePackId>
     ) override;
-    bool infer(const MagicFunctionCallContext& ctx) override;
+    bool infer(const MagicFunctionCallContext& context) override;
 };
 
 struct MagicGmatch final : MagicFunction
@@ -131,7 +131,7 @@ struct MagicGmatch final : MagicFunction
         const class AstExprCall&,
         WithPredicate<TypePackId>
     ) override;
-    bool infer(const MagicFunctionCallContext& ctx) override;
+    bool infer(const MagicFunctionCallContext& context) override;
 };
 
 struct MagicFind final : MagicFunction
@@ -142,7 +142,7 @@ struct MagicFind final : MagicFunction
         const class AstExprCall&,
         WithPredicate<TypePackId>
     ) override;
-    bool infer(const MagicFunctionCallContext& ctx) override;
+    bool infer(const MagicFunctionCallContext& context) override;
 };
 
 struct MagicPcall final : MagicFunction
@@ -620,7 +620,7 @@ std::optional<WithPredicate<TypePackId>> MagicFormat::handleOldSolver(
 {
     auto [paramPack, _predicates] = std::move(withPredicate);
 
-    TypeArena& arena = typechecker.currentModule->internalTypes;
+    TypeArena& arena = *typechecker.currentModule->internalTypes;
 
     AstExprConstantString* fmt = nullptr;
     if (auto index = expr.func->as<AstExprIndexName>(); index && expr.self)
@@ -871,7 +871,7 @@ std::optional<WithPredicate<TypePackId>> MagicGmatch::handleOldSolver(
     if (params.size() != 2)
         return std::nullopt;
 
-    TypeArena& arena = typechecker.currentModule->internalTypes;
+    TypeArena& arena = *typechecker.currentModule->internalTypes;
 
     AstExprConstantString* pattern = nullptr;
     size_t index = expr.self ? 0 : 1;
@@ -940,7 +940,7 @@ std::optional<WithPredicate<TypePackId>> MagicMatch::handleOldSolver(
     if (params.size() < 2 || params.size() > 3)
         return std::nullopt;
 
-    TypeArena& arena = typechecker.currentModule->internalTypes;
+    TypeArena& arena = *typechecker.currentModule->internalTypes;
 
     AstExprConstantString* pattern = nullptr;
     size_t patternIndex = expr.self ? 0 : 1;
@@ -1016,7 +1016,7 @@ std::optional<WithPredicate<TypePackId>> MagicFind::handleOldSolver(
     if (params.size() < 2 || params.size() > 4)
         return std::nullopt;
 
-    TypeArena& arena = typechecker.currentModule->internalTypes;
+    TypeArena& arena = *typechecker.currentModule->internalTypes;
 
     AstExprConstantString* pattern = nullptr;
     size_t patternIndex = expr.self ? 0 : 1;
@@ -1298,7 +1298,7 @@ std::optional<WithPredicate<TypePackId>> MagicSelect::handleOldSolver(
             if (size_t(offset) < v.size())
             {
                 std::vector<TypeId> result(v.begin() + offset, v.end());
-                return WithPredicate<TypePackId>{typechecker.currentModule->internalTypes.addTypePack(TypePack{std::move(result), tail})};
+                return WithPredicate<TypePackId>{typechecker.currentModule->internalTypes->addTypePack(TypePack{std::move(result), tail})};
             }
             else if (tail)
                 return WithPredicate<TypePackId>{*tail};
@@ -1309,7 +1309,7 @@ std::optional<WithPredicate<TypePackId>> MagicSelect::handleOldSolver(
     else if (AstExprConstantString* str = arg1->as<AstExprConstantString>())
     {
         if (str->value.size == 1 && str->value.data[0] == '#')
-            return WithPredicate<TypePackId>{typechecker.currentModule->internalTypes.addTypePack({typechecker.numberType})};
+            return WithPredicate<TypePackId>{typechecker.currentModule->internalTypes->addTypePack({typechecker.numberType})};
     }
 
     return std::nullopt;
@@ -1372,7 +1372,7 @@ std::optional<WithPredicate<TypePackId>> MagicSetMetatable::handleOldSolver(
     if (size(paramPack) < 2 && finite(paramPack))
         return std::nullopt;
 
-    TypeArena& arena = typechecker.currentModule->internalTypes;
+    TypeArena& arena = *typechecker.currentModule->internalTypes;
 
     std::vector<TypeId> expectedArgs = typechecker.unTypePack(scope, paramPack, 2, expr.location);
 
@@ -1456,7 +1456,7 @@ std::optional<WithPredicate<TypePackId>> MagicAssert::handleOldSolver(
 {
     auto [paramPack, predicates] = std::move(withPredicate);
 
-    TypeArena& arena = typechecker.currentModule->internalTypes;
+    TypeArena& arena = *typechecker.currentModule->internalTypes;
 
     auto [head, tail] = flatten(paramPack);
     if (head.empty() && tail)
@@ -1495,7 +1495,7 @@ std::optional<WithPredicate<TypePackId>> MagicPack::handleOldSolver(
 {
     auto [paramPack, _predicates] = std::move(withPredicate);
 
-    TypeArena& arena = typechecker.currentModule->internalTypes;
+    TypeArena& arena = *typechecker.currentModule->internalTypes;
 
     const auto& [paramTypes, paramTail] = flatten(paramPack);
 
@@ -1580,7 +1580,7 @@ std::optional<WithPredicate<TypePackId>> MagicClone::handleOldSolver(
 {
     auto [paramPack, _predicates] = std::move(withPredicate);
 
-    TypeArena& arena = typechecker.currentModule->internalTypes;
+    TypeArena& arena = *typechecker.currentModule->internalTypes;
 
     // in the old solver, nonstrict in particular is really bad about inferring `...any` for things that are definitely present
     // and the only real way for us to deal with this is to just be more permissive here
@@ -1776,7 +1776,7 @@ bool MagicFreeze::typeCheck(const MagicFunctionTypeCheckContext& ctx)
     {
         // If we can't get a type from the type or type pack, we testIsSubtype against the entire context's argument type pack to report a Type Pack
         // Mismatch error.
-        TypePackId tableTyPack = ctx.typechecker->module->internalTypes.addTypePack({ctx.typechecker->builtinTypes->tableType});
+        TypePackId tableTyPack = ctx.typechecker->module->internalTypes->addTypePack({ctx.typechecker->builtinTypes->tableType});
         ctx.typechecker->testIsSubtype(follow(ctx.arguments), tableTyPack, ctx.callSite->location);
         return true;
     }
@@ -1819,7 +1819,7 @@ std::optional<WithPredicate<TypePackId>> MagicRequire::handleOldSolver(
     WithPredicate<TypePackId> withPredicate
 )
 {
-    TypeArena& arena = typechecker.currentModule->internalTypes;
+    TypeArena& arena = *typechecker.currentModule->internalTypes;
 
     if (expr.args.size != 1)
     {

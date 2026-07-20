@@ -56,9 +56,10 @@ public:
     };
 
     BytecodeBuilder(BytecodeEncoder* encoder = 0);
+    virtual ~BytecodeBuilder() = default;
 
     uint32_t beginFunction(uint8_t numparams, bool isvararg = false);
-    void endFunction(uint8_t maxstacksize, uint8_t numupvalues, uint8_t flags = 0);
+    void endFunction(uint8_t maxstacksize, uint8_t numupvalues, uint8_t flags = 0, uint64_t cost = 0);
 
     void setMainFunction(uint32_t fid);
 
@@ -92,7 +93,7 @@ public:
     void patchAux(size_t targetAux, int32_t newValue);
 
     void foldJumps();
-    void expandJumps();
+    std::vector<uint32_t> expandJumps();
 
     void setFunctionTypeInfo(std::string value);
     void pushLocalTypeInfo(LuauBytecodeType type, uint8_t reg, uint32_t startpc, uint32_t endpc);
@@ -155,6 +156,11 @@ public:
         return functions[id].data;
     }
 
+    uint32_t getFunctionCount() const
+    {
+        return static_cast<uint32_t>(functions.size());
+    }
+
     std::vector<std::string_view> getStringTable();
 
     void annotateInstruction(std::string& result, uint32_t fid, uint32_t instpos) const;
@@ -172,7 +178,7 @@ public:
     static uint8_t getVersion();
     static uint8_t getTypeEncodingVersion();
 
-private:
+protected:
     struct Constant
     {
         enum Type
@@ -343,12 +349,19 @@ private:
     void validate() const;
     void validateInstructions() const;
     void validateVariadic() const;
+    virtual void validateConst(int32_t cid) const;
+    virtual void validateConst(int32_t cid, Constant::Type constType) const;
+    virtual uint8_t validateProto(int32_t pid) const;
+    virtual uint8_t validateClosure(int32_t cid) const;
 
     std::string dumpCurrentFunction(std::vector<int>& dumpinstoffs) const;
-    void dumpConstant(std::string& result, int k, bool detailed) const;
-    void dumpInstruction(const uint32_t* opcode, std::string& output, int targetLabel) const;
+    virtual void dumpConstant(std::string& result, int k, bool detailed) const;
+    void dumpInstruction(const uint32_t* opcode, std::string& result, int targetLabel) const;
 
-    void writeFunction(std::string& ss, uint32_t id, uint8_t flags);
+    int calcLinesSpan() const;
+    void fillBaselineInfo(int span, int* baseline, size_t baselineSize) const;
+
+    void writeFunction(std::string& ss, uint32_t id, uint8_t flags, uint64_t cost);
     void writeLineInfo(std::string& ss) const;
     void writeStringTable(std::string& ss) const;
     void writeClassShape(std::string& ss, const ClassShape& cs) const;
@@ -357,6 +370,7 @@ private:
     unsigned int addStringTableEntry(StringRef value);
 
     const char* tryGetUserdataTypeName(LuauBytecodeType type) const;
+    void clearState();
 };
 
 } // namespace Luau
