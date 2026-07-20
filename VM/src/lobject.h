@@ -306,10 +306,16 @@ typedef struct Udata
 typedef struct LuauBuffer
 {
     CommonHeader;
+    // mode 0: standard internal buffer, memory in inline_data
+    // mode 1: external buffer, immutable (cannot be written from Lua)
+    // mode 2: external buffer, mutable (can be written from Lua)
+    uint8_t mode;
 
     unsigned int len;
+    char* data;
+    lua_BufferFree free_cb;
 
-    alignas(8) char data[1];
+    alignas(8) char inline_data[1];
 } Buffer;
 
 enum FeedbackVectorSlotKind

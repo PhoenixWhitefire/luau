@@ -4,6 +4,7 @@
 #include "lgc.h"
 #include "lmem.h"
 
+#include "lstate.h"
 #include <string.h>
 
 Buffer* luaB_newbuffer(lua_State* L, size_t s)
@@ -14,11 +15,41 @@ Buffer* luaB_newbuffer(lua_State* L, size_t s)
     Buffer* b = luaM_newgco(L, Buffer, sizebuffer(s), L->activememcat);
     luaC_init(L, b, LUA_TBUFFER);
     b->len = unsigned(s);
+    b->mode = 0;
+    b->free_cb = NULL;
+    b->data = b->inline_data;
     memset(b->data, 0, b->len);
+    return b;
+}
+
+Buffer* luaB_newexternalbuffer(lua_State* L, size_t s, void* data, lua_BufferFree free_cb, int mode)
+{
+    LUAU_ASSERT(mode == 1 || mode == 2);
+    if (s > MAX_BUFFER_SIZE)
+        luaM_toobig(L);
+
+    Buffer* b = luaM_newgco(L, Buffer, offsetof(Buffer, inline_data), L->activememcat);
+    luaC_init(L, b, LUA_TBUFFER);
+    b->len = unsigned(s);
+    b->mode = mode;
+    b->data = (char*)data;
+    b->free_cb = free_cb;
+    
+    L->global->totalbytes += s;
+    L->global->memcatbytes[L->activememcat] += s;
     return b;
 }
 
 void luaB_freebuffer(lua_State* L, Buffer* b, lua_Page* page)
 {
-    luaM_freegco(L, b, sizebuffer(b->len), b->memcat, page);
+    if (b->mode != 0) {
+        if (b->free_cb) {
+            b->free_cb(L, b->data);
+        }
+        L->global->totalbytes -= b->len;
+        L->global->memcatbytes[b->memcat] -= b->len;
+        luaM_freegco(L, b, offsetof(Buffer, inline_data), b->memcat, page);
+    } else {
+        luaM_freegco(L, b, sizebuffer(b->len), b->memcat, page);
+    }
 }

@@ -20,6 +20,7 @@
 LUAU_FASTFLAG(LuauDirectFieldGet)
 LUAU_FASTFLAGVARIABLE(LuauAutoStack)
 LUAU_FASTFLAGVARIABLE(LuauCloneTableFix)
+LUAU_FASTFLAGVARIABLE(LuauExternallyManagedBuffers)
 
 /*
  * This file contains most implementations of core Lua APIs from lua.h.
@@ -1528,6 +1529,25 @@ void* lua_newbuffer(lua_State* L, size_t sz)
     setbufvalue(L, L->top, b);
     api_incr_top(L);
     return b->data;
+}
+
+void* lua_newexternalbuffer(lua_State* L, size_t sz, void* data, lua_BufferFree free_cb, int mode)
+{
+    api_check(L, FFlag::LuauExternallyManagedBuffers);
+    api_check(L, mode == 1 || mode == 2);
+    luaC_checkGC(L);
+    luaC_threadbarrier(L);
+    ensure_stack(L, 1);
+    Buffer* b = luaB_newexternalbuffer(L, sz, data, free_cb, mode);
+    setbufvalue(L, L->top, b);
+    api_incr_top(L);
+    return b->data;
+}
+
+int lua_isbuffermutable(lua_State* L, int idx)
+{
+    StkId p = index2addr(L, idx);
+    return ttisbuffer(p) && bufvalue(p)->mode != 1;
 }
 
 static const char* aux_upvalue(StkId fi, int n, TValue** val)

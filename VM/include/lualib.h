@@ -47,6 +47,7 @@ LUALIB_API void* luaL_checkudata(lua_State* L, int ud, const char* tname);
 LUALIB_API void* luaL_checkudatatagged(lua_State* L, int ud, int tag);
 
 LUALIB_API void* luaL_checkbuffer(lua_State* L, int narg, size_t* len);
+LUALIB_API void* luaL_checkbuffermutable(lua_State* L, int narg, size_t* len);
 
 LUALIB_API void luaL_where(lua_State* L, int lvl);
 LUALIB_API LUA_PRINTF_ATTR(2, 3) l_noret luaL_errorL(lua_State* L, const char* fmt, ...);

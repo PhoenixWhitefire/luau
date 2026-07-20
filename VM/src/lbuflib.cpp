@@ -88,7 +88,7 @@ template<typename T>
 static int buffer_writeinteger(lua_State* L)
 {
     size_t len = 0;
-    void* buf = luaL_checkbuffer(L, 1, &len);
+    void* buf = luaL_checkbuffermutable(L, 1, &len);
     int offset = luaL_checkinteger(L, 2);
     int value = luaL_checkunsigned(L, 3);
 
@@ -128,7 +128,7 @@ static int buffer_readlong(lua_State* L)
 static int buffer_writelong(lua_State* L)
 {
     size_t len = 0;
-    void* buf = luaL_checkbuffer(L, 1, &len);
+    void* buf = luaL_checkbuffermutable(L, 1, &len);
     int offset = luaL_checkinteger(L, 2);
     int64_t value = luaL_checkinteger64(L, 3);
 
@@ -174,7 +174,7 @@ template<typename T, typename StorageType>
 static int buffer_writefp(lua_State* L)
 {
     size_t len = 0;
-    void* buf = luaL_checkbuffer(L, 1, &len);
+    void* buf = luaL_checkbuffermutable(L, 1, &len);
     int offset = luaL_checkinteger(L, 2);
     double value = luaL_checknumber(L, 3);
 
@@ -216,7 +216,7 @@ static int buffer_readstring(lua_State* L)
 static int buffer_writestring(lua_State* L)
 {
     size_t len = 0;
-    void* buf = luaL_checkbuffer(L, 1, &len);
+    void* buf = luaL_checkbuffermutable(L, 1, &len);
     int offset = luaL_checkinteger(L, 2);
     size_t size = 0;
     const char* val = luaL_checklstring(L, 3, &size);
@@ -247,7 +247,7 @@ static int buffer_len(lua_State* L)
 static int buffer_copy(lua_State* L)
 {
     size_t tlen = 0;
-    void* tbuf = luaL_checkbuffer(L, 1, &tlen);
+    void* tbuf = luaL_checkbuffermutable(L, 1, &tlen);
     int toffset = luaL_checkinteger(L, 2);
 
     size_t slen = 0;
@@ -272,7 +272,7 @@ static int buffer_copy(lua_State* L)
 static int buffer_fill(lua_State* L)
 {
     size_t len = 0;
-    void* buf = luaL_checkbuffer(L, 1, &len);
+    void* buf = luaL_checkbuffermutable(L, 1, &len);
     int offset = luaL_checkinteger(L, 2);
     unsigned value = luaL_checkunsigned(L, 3);
     int size = luaL_optinteger(L, 4, int(len) - offset);
@@ -325,7 +325,7 @@ static int buffer_readbits(lua_State* L)
 static int buffer_writebits(lua_State* L)
 {
     size_t len = 0;
-    void* buf = luaL_checkbuffer(L, 1, &len);
+    void* buf = luaL_checkbuffermutable(L, 1, &len);
     int64_t bitoffset = (int64_t)luaL_checknumber(L, 2);
     int bitcount = luaL_checkinteger(L, 3);
     unsigned value = luaL_checkunsigned(L, 4);

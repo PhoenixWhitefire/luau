@@ -156,6 +156,16 @@ void* luaL_checkbuffer(lua_State* L, int narg, size_t* len)
     return b;
 }
 
+void* luaL_checkbuffermutable(lua_State* L, int narg, size_t* len)
+{
+    void* b = lua_tobuffer(L, narg, len);
+    if (!b)
+        tag_error(L, narg, LUA_TBUFFER);
+    if (!lua_isbuffermutable(L, narg))
+        luaL_error(L, "buffer is immutable");
+    return b;
+}
+
 void luaL_checkstack(lua_State* L, int space, const char* mes)
 {
     if (!lua_checkstack(L, space))
