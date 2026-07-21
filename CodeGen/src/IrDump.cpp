@@ -381,6 +381,8 @@ const char* getCmdName(IrCmd cmd)
         return "CHECK_NODE_VALUE";
     case IrCmd::CHECK_BUFFER_LEN:
         return "CHECK_BUFFER_LEN";
+    case IrCmd::CHECK_BUFFER_MUTABLE:
+        return "CHECK_BUFFER_MUTABLE";
     case IrCmd::CHECK_USERDATA_TAG:
         return "CHECK_USERDATA_TAG";
     case IrCmd::CHECK_CMP_NUM:

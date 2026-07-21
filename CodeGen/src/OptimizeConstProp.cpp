@@ -2287,6 +2287,8 @@ static void constPropInInst(ConstPropState& state, IrBuilder& build, IrFunction&
             state.inSafeEnv = true;
         }
         break;
+    case IrCmd::CHECK_BUFFER_MUTABLE:
+        break;
     case IrCmd::CHECK_BUFFER_LEN:
     {
         std::optional<int> bufferOffset = function.asIntOp(OP_B(inst).kind == IrOpKind::Constant ? OP_B(inst) : state.tryGetValue(OP_B(inst)));

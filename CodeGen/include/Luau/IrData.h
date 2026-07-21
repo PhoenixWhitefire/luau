@@ -690,6 +690,7 @@ enum class IrCmd : uint8_t
     // F: block/vmexit/undef
     // When undef is specified instead of a block, execution is aborted on check failure
     CHECK_BUFFER_LEN,
+    CHECK_BUFFER_MUTABLE,
 
     // Guard against userdata tag mismatch
     // A: pointer (userdata)

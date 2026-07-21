@@ -5394,21 +5394,26 @@ bb_bytecode_1:
   %20 = LOAD_DOUBLE R1
   %21 = NUM_TO_INT %20
   CHECK_BUFFER_LEN %19, %21, 0i, 12i, %20, exit(2)
-  %23 = LOAD_DOUBLE R2
-  %24 = NUM_TO_UINT %23
-  BUFFER_WRITEI32 %19, %21, %24, tbuffer
-  %30 = ADD_NUM %20, 4
-  %41 = ADD_INT %21, 4i
-  %43 = LOAD_DOUBLE R3
-  %44 = NUM_TO_UINT %43
-  BUFFER_WRITEI32 %19, %41, %44, tbuffer
-  %50 = ADD_NUM %30, 4
-  %61 = ADD_INT %21, 8i
-  %63 = LOAD_DOUBLE R4
-  %64 = NUM_TO_UINT %63
-  BUFFER_WRITEI32 %19, %61, %64, tbuffer
-  %70 = ADD_NUM %50, 4
-  STORE_DOUBLE R1, %70
+  CHECK_BUFFER_MUTABLE %19, exit(2)
+  %24 = LOAD_DOUBLE R2
+  %25 = NUM_TO_UINT %24
+  BUFFER_WRITEI32 %19, %21, %25, tbuffer
+  %31 = ADD_NUM %20, 4
+  %42 = ADD_INT %21, 4i
+  CHECK_BUFFER_MUTABLE %19, bb_exit_6
+   ; exit sync: R1, {%31}
+  %45 = LOAD_DOUBLE R3
+  %46 = NUM_TO_UINT %45
+  BUFFER_WRITEI32 %19, %42, %46, tbuffer
+  %52 = ADD_NUM %31, 4
+  %63 = ADD_INT %21, 8i
+  CHECK_BUFFER_MUTABLE %19, bb_exit_7
+   ; exit sync: R1, {%52}
+  %66 = LOAD_DOUBLE R4
+  %67 = NUM_TO_UINT %66
+  BUFFER_WRITEI32 %19, %63, %67, tbuffer
+  %73 = ADD_NUM %52, 4
+  STORE_DOUBLE R1, %73
   INTERRUPT 27u
   RETURN R1, 1i
 )"
@@ -5525,29 +5530,46 @@ bb_2:
 bb_bytecode_1:
   implicit CHECK_SAFE_ENV exit(0)
   %10 = LOAD_DOUBLE R0
+  %11 = ADD_NUM %10, 0
   %25 = LOAD_POINTER R1
   %27 = NUM_TO_INT %10
   CHECK_BUFFER_LEN %25, %27, 0i, 1i, undef, bb_exit_19
-   ; exit sync: R8, R5, {%10}
+   ; exit sync: R8, R5, {%11}
   %29 = BUFFER_READI8 %25, %27, tbuffer
+  CHECK_BUFFER_MUTABLE %25, bb_exit_20
+   ; exit sync: R6, R5, {%11, %29}
   BUFFER_WRITEI8 %25, %27, %29, tbuffer
-  %70 = BUFFER_READU8 %25, %27, tbuffer
-  BUFFER_WRITEI8 %25, %27, %70, tbuffer
-  %107 = LOAD_POINTER R2
-  CHECK_BUFFER_LEN %107, %27, 0i, 2i, %10, exit(32)
-  %111 = BUFFER_READI8 %107, %27, tbuffer
-  BUFFER_WRITEI8 %107, %27, %111, tbuffer
-  %152 = BUFFER_READU8 %107, %27, tbuffer
-  BUFFER_WRITEI8 %107, %27, %152, tbuffer
-  %191 = ADD_INT %27, 1i
-  %193 = BUFFER_READI8 %107, %191, tbuffer
-  BUFFER_WRITEI8 %107, %191, %193, tbuffer
-  %234 = BUFFER_READU8 %107, %191, tbuffer
-  BUFFER_WRITEI8 %107, %191, %234, tbuffer
-  %275 = BUFFER_READI16 %107, %27, tbuffer
-  BUFFER_WRITEI16 %107, %27, %275, tbuffer
-  %316 = BUFFER_READU16 %107, %27, tbuffer
-  BUFFER_WRITEI16 %107, %27, %316, tbuffer
+  %71 = BUFFER_READU8 %25, %27, tbuffer
+  CHECK_BUFFER_MUTABLE %25, bb_exit_21
+   ; exit sync: R6, {%71}
+  BUFFER_WRITEI8 %25, %27, %71, tbuffer
+  %109 = LOAD_POINTER R2
+  CHECK_BUFFER_LEN %109, %27, 0i, 2i, %10, exit(32)
+  %113 = BUFFER_READI8 %109, %27, tbuffer
+  CHECK_BUFFER_MUTABLE %109, bb_exit_22
+   ; exit sync: R6, {%113}
+  BUFFER_WRITEI8 %109, %27, %113, tbuffer
+  %155 = BUFFER_READU8 %109, %27, tbuffer
+  CHECK_BUFFER_MUTABLE %109, bb_exit_23
+   ; exit sync: R6, {%155}
+  BUFFER_WRITEI8 %109, %27, %155, tbuffer
+  %195 = ADD_INT %27, 1i
+  %197 = BUFFER_READI8 %109, %195, tbuffer
+  CHECK_BUFFER_MUTABLE %109, bb_exit_24
+   ; exit sync: R6, R5, {%197, %10}
+  BUFFER_WRITEI8 %109, %195, %197, tbuffer
+  %239 = BUFFER_READU8 %109, %195, tbuffer
+  CHECK_BUFFER_MUTABLE %109, bb_exit_25
+   ; exit sync: R6, {%239}
+  BUFFER_WRITEI8 %109, %195, %239, tbuffer
+  %281 = BUFFER_READI16 %109, %27, tbuffer
+  CHECK_BUFFER_MUTABLE %109, bb_exit_26
+   ; exit sync: R6, R5, {%11, %281}
+  BUFFER_WRITEI16 %109, %27, %281, tbuffer
+  %323 = BUFFER_READU16 %109, %27, tbuffer
+  CHECK_BUFFER_MUTABLE %109, bb_exit_27
+   ; exit sync: R6, {%323}
+  BUFFER_WRITEI16 %109, %27, %323, tbuffer
   INTERRUPT 112u
   RETURN R0, 0i
 )"
@@ -5588,24 +5610,40 @@ bb_bytecode_1:
   CHECK_BUFFER_LEN %25, %27, 0i, 1i, undef, bb_exit_19
    ; exit sync: R8, R5, {%11}
   %29 = BUFFER_READI8 %25, %27, tbuffer
+  CHECK_BUFFER_MUTABLE %25, bb_exit_20
+   ; exit sync: R6, R5, {%11, %29}
   BUFFER_WRITEI8 %25, %27, %29, tbuffer
-  %70 = BUFFER_READU8 %25, %27, tbuffer
-  BUFFER_WRITEI8 %25, %27, %70, tbuffer
-  %107 = LOAD_POINTER R2
-  CHECK_BUFFER_LEN %107, %27, 0i, 2i, %11, exit(32)
-  %111 = BUFFER_READI8 %107, %27, tbuffer
-  BUFFER_WRITEI8 %107, %27, %111, tbuffer
-  %152 = BUFFER_READU8 %107, %27, tbuffer
-  BUFFER_WRITEI8 %107, %27, %152, tbuffer
-  %191 = ADD_INT %27, 1i
-  %193 = BUFFER_READI8 %107, %191, tbuffer
-  BUFFER_WRITEI8 %107, %191, %193, tbuffer
-  %234 = BUFFER_READU8 %107, %191, tbuffer
-  BUFFER_WRITEI8 %107, %191, %234, tbuffer
-  %275 = BUFFER_READI16 %107, %27, tbuffer
-  BUFFER_WRITEI16 %107, %27, %275, tbuffer
-  %316 = BUFFER_READU16 %107, %27, tbuffer
-  BUFFER_WRITEI16 %107, %27, %316, tbuffer
+  %71 = BUFFER_READU8 %25, %27, tbuffer
+  CHECK_BUFFER_MUTABLE %25, bb_exit_21
+   ; exit sync: R6, {%71}
+  BUFFER_WRITEI8 %25, %27, %71, tbuffer
+  %109 = LOAD_POINTER R2
+  CHECK_BUFFER_LEN %109, %27, 0i, 2i, %11, exit(32)
+  %113 = BUFFER_READI8 %109, %27, tbuffer
+  CHECK_BUFFER_MUTABLE %109, bb_exit_22
+   ; exit sync: R6, {%113}
+  BUFFER_WRITEI8 %109, %27, %113, tbuffer
+  %155 = BUFFER_READU8 %109, %27, tbuffer
+  CHECK_BUFFER_MUTABLE %109, bb_exit_23
+   ; exit sync: R6, {%155}
+  BUFFER_WRITEI8 %109, %27, %155, tbuffer
+  %195 = ADD_INT %27, 1i
+  %197 = BUFFER_READI8 %109, %195, tbuffer
+  CHECK_BUFFER_MUTABLE %109, bb_exit_24
+   ; exit sync: R6, R5, {%10, %197}
+  BUFFER_WRITEI8 %109, %195, %197, tbuffer
+  %239 = BUFFER_READU8 %109, %195, tbuffer
+  CHECK_BUFFER_MUTABLE %109, bb_exit_25
+   ; exit sync: R6, {%239}
+  BUFFER_WRITEI8 %109, %195, %239, tbuffer
+  %281 = BUFFER_READI16 %109, %27, tbuffer
+  CHECK_BUFFER_MUTABLE %109, bb_exit_26
+   ; exit sync: R6, R5, {%11, %281}
+  BUFFER_WRITEI16 %109, %27, %281, tbuffer
+  %323 = BUFFER_READU16 %109, %27, tbuffer
+  CHECK_BUFFER_MUTABLE %109, bb_exit_27
+   ; exit sync: R6, {%323}
+  BUFFER_WRITEI16 %109, %27, %323, tbuffer
   INTERRUPT 112u
   RETURN R0, 0i
 )"
@@ -5945,12 +5983,14 @@ bb_bytecode_1:
   %15 = LOAD_POINTER R0
   CHECK_BUFFER_LEN %15, 0i, 0i, 8i, undef, bb_exit_12
    ; exit sync: R4, R3, {}
+  CHECK_BUFFER_MUTABLE %15, bb_exit_13
+   ; exit sync: R4, R3, {}
   BUFFER_WRITEF64 %15, 0i, 3.1400000000000001, tbuffer
   STORE_SPLIT_TVALUE R3, tnumber, 4
   STORE_SPLIT_TVALUE R4, tnumber, 170
   SET_SAVEDPC 12u
-  %28 = INVOKE_FASTCALL 67u, R1, R0, R3, R4, 3i, 1i
-  CHECK_FASTCALL_RES %28, bb_fallback_4
+  %29 = INVOKE_FASTCALL 67u, R1, R0, R3, R4, 3i, 1i
+  CHECK_FASTCALL_RES %29, bb_fallback_4
   JUMP bb_linear_11
 bb_linear_11:
   STORE_DOUBLE R4, 5
@@ -5958,25 +5998,25 @@ bb_linear_11:
   STORE_DOUBLE R5, 187
   STORE_TAG R5, tnumber
   SET_SAVEDPC 20u
-  %97 = INVOKE_FASTCALL 67u, R2, R0, R4, R5, 3i, 1i
-  CHECK_FASTCALL_RES %97, bb_fallback_6
+  %98 = INVOKE_FASTCALL 67u, R2, R0, R4, R5, 3i, 1i
+  CHECK_FASTCALL_RES %98, bb_fallback_6
   STORE_DOUBLE R5, 0
   STORE_TAG R5, tnumber
   STORE_DOUBLE R6, 255
   STORE_TAG R6, tnumber
   SET_SAVEDPC 28u
-  %106 = INVOKE_FASTCALL 67u, R3, R0, R5, R6, 3i, 1i
-  CHECK_FASTCALL_RES %106, bb_fallback_8
+  %107 = INVOKE_FASTCALL 67u, R3, R0, R5, R6, 3i, 1i
+  CHECK_FASTCALL_RES %107, bb_fallback_8
   CHECK_BUFFER_LEN %15, 0i, 0i, 8i, undef, exit(34)
-  %112 = BUFFER_READF64 %15, 0i, tbuffer
-  STORE_DOUBLE R4, %112
+  %113 = BUFFER_READF64 %15, 0i, tbuffer
+  STORE_DOUBLE R4, %113
   STORE_TAG R4, tnumber
-  %115 = LOAD_TVALUE R1
-  STORE_TVALUE R5, %115
-  %117 = LOAD_TVALUE R2
-  STORE_TVALUE R6, %117
-  %119 = LOAD_TVALUE R3
-  STORE_TVALUE R7, %119
+  %116 = LOAD_TVALUE R1
+  STORE_TVALUE R5, %116
+  %118 = LOAD_TVALUE R2
+  STORE_TVALUE R6, %118
+  %120 = LOAD_TVALUE R3
+  STORE_TVALUE R7, %120
   INTERRUPT 42u
   RETURN R4, 4i
 )"
@@ -7254,14 +7294,24 @@ bb_bytecode_1:
   %15 = LOAD_POINTER R0
   CHECK_BUFFER_LEN %15, 10i, 0i, 5i, undef, bb_exit_17
    ; exit sync: R4, R3, {}
+  CHECK_BUFFER_MUTABLE %15, bb_exit_18
+   ; exit sync: R4, R3, {}
   BUFFER_WRITEI8 %15, 10i, 32i, tbuffer
   JUMP bb_bytecode_3
 bb_bytecode_3:
   JUMP bb_8
 bb_8:
+  CHECK_BUFFER_MUTABLE %15, bb_exit_19
+   ; exit sync: R4, R3, {}
   BUFFER_WRITEI8 %15, 14i, 4i, tbuffer
+  CHECK_BUFFER_MUTABLE %15, bb_exit_20
+   ; exit sync: R4, R3, {}
   BUFFER_WRITEI8 %15, 13i, 3i, tbuffer
+  CHECK_BUFFER_MUTABLE %15, bb_exit_21
+   ; exit sync: R4, R3, {}
   BUFFER_WRITEI8 %15, 12i, 2i, tbuffer
+  CHECK_BUFFER_MUTABLE %15, bb_exit_22
+   ; exit sync: R4, R3, {}
   BUFFER_WRITEI8 %15, 11i, 1i, tbuffer
   STORE_DOUBLE R1, 10
   STORE_TAG R1, tnumber
@@ -7314,6 +7364,8 @@ bb_bytecode_1:
   %15 = LOAD_POINTER R0
   CHECK_BUFFER_LEN %15, 0i, 0i, 4i, undef, bb_exit_69
    ; exit sync: R4, R3, {}
+  CHECK_BUFFER_MUTABLE %15, bb_exit_70
+   ; exit sync: R4, R3, {}
   BUFFER_WRITEI32 %15, 0i, -1i, tbuffer
   JUMP bb_bytecode_3
 bb_bytecode_3:
@@ -7323,6 +7375,8 @@ bb_30:
 bb_bytecode_5:
   JUMP bb_33
 bb_33:
+  CHECK_BUFFER_MUTABLE %15, bb_exit_71
+   ; exit sync: R4, R3, {}
   BUFFER_WRITEI32 %15, 0i, -1i, tbuffer
   JUMP bb_bytecode_7
 bb_bytecode_7:
@@ -7332,6 +7386,8 @@ bb_37:
 bb_bytecode_9:
   JUMP bb_40
 bb_40:
+  CHECK_BUFFER_MUTABLE %15, bb_exit_72
+   ; exit sync: R4, R3, {}
   BUFFER_WRITEI16 %15, 0i, 65535i, tbuffer
   JUMP bb_bytecode_11
 bb_bytecode_11:
@@ -7341,6 +7397,8 @@ bb_44:
 bb_bytecode_13:
   JUMP bb_47
 bb_47:
+  CHECK_BUFFER_MUTABLE %15, bb_exit_73
+   ; exit sync: R3, {}
   BUFFER_WRITEI16 %15, 0i, 65535i, tbuffer
   JUMP bb_bytecode_15
 bb_bytecode_15:
@@ -7350,6 +7408,8 @@ bb_51:
 bb_bytecode_17:
   JUMP bb_54
 bb_54:
+  CHECK_BUFFER_MUTABLE %15, bb_exit_74
+   ; exit sync: R4, R3, {}
   BUFFER_WRITEI8 %15, 0i, -1i, tbuffer
   JUMP bb_bytecode_19
 bb_bytecode_19:
@@ -7359,6 +7419,8 @@ bb_58:
 bb_bytecode_21:
   JUMP bb_61
 bb_61:
+  CHECK_BUFFER_MUTABLE %15, bb_exit_75
+   ; exit sync: R3, {}
   BUFFER_WRITEI16 %15, 0i, -1i, tbuffer
   JUMP bb_bytecode_23
 bb_bytecode_23:
@@ -7433,52 +7495,110 @@ bb_bytecode_1:
   %17 = LOAD_POINTER R0
   CHECK_BUFFER_LEN %17, 0i, 0i, 212i, undef, bb_exit_55
    ; exit sync: R5, {}
-  %21 = LOAD_DOUBLE R1
-  %22 = NUM_TO_UINT %21
-  BUFFER_WRITEI8 %17, 0i, %22, tbuffer
-  %33 = SEXTI8_INT %22
-  %34 = INT_TO_NUM %33
-  BUFFER_WRITEF64 %17, 100i, %34, tbuffer
-  BUFFER_WRITEI8 %17, 108i, %22, tbuffer
-  BUFFER_WRITEI8 %17, 109i, %22, tbuffer
-  BUFFER_WRITEI8 %17, 2i, %22, tbuffer
-  %133 = BITAND_UINT %22, 255i
-  %134 = INT_TO_NUM %133
-  BUFFER_WRITEF64 %17, 116i, %134, tbuffer
-  BUFFER_WRITEI8 %17, 124i, %22, tbuffer
-  BUFFER_WRITEI8 %17, 125i, %22, tbuffer
-  BUFFER_WRITEI16 %17, 4i, %22, tbuffer
-  %233 = SEXTI16_INT %22
-  %234 = INT_TO_NUM %233
-  BUFFER_WRITEF64 %17, 132i, %234, tbuffer
-  BUFFER_WRITEI16 %17, 140i, %22, tbuffer
-  BUFFER_WRITEI16 %17, 142i, %22, tbuffer
-  BUFFER_WRITEI16 %17, 8i, %22, tbuffer
-  %333 = BITAND_UINT %22, 65535i
-  %334 = INT_TO_NUM %333
-  BUFFER_WRITEF64 %17, 148i, %334, tbuffer
-  BUFFER_WRITEI16 %17, 156i, %22, tbuffer
-  BUFFER_WRITEI16 %17, 158i, %22, tbuffer
-  BUFFER_WRITEI32 %17, 12i, %22, tbuffer
-  %433 = TRUNCATE_UINT %22
-  %434 = INT_TO_NUM %433
-  BUFFER_WRITEF64 %17, 164i, %434, tbuffer
-  BUFFER_WRITEI32 %17, 172i, %22, tbuffer
-  BUFFER_WRITEI32 %17, 176i, %22, tbuffer
-  BUFFER_WRITEI32 %17, 20i, %22, tbuffer
-  %534 = UINT_TO_NUM %22
-  BUFFER_WRITEF64 %17, 180i, %534, tbuffer
-  BUFFER_WRITEI32 %17, 188i, %22, tbuffer
-  BUFFER_WRITEI32 %17, 192i, %22, tbuffer
-  %621 = LOAD_DOUBLE R2
-  %622 = NUM_TO_FLOAT %621
-  BUFFER_WRITEF32 %17, 28i, %622, tbuffer
-  %634 = FLOAT_TO_NUM %622
-  BUFFER_WRITEF64 %17, 196i, %634, tbuffer
-  BUFFER_WRITEF32 %17, 196i, %622, tbuffer
-  BUFFER_WRITEF64 %17, 32i, %621, tbuffer
-  BUFFER_WRITEF64 %17, 204i, %621, tbuffer
-  BUFFER_WRITEF32 %17, 204i, %622, tbuffer
+  CHECK_BUFFER_MUTABLE %17, bb_exit_56
+   ; exit sync: R5, {}
+  %22 = LOAD_DOUBLE R1
+  %23 = NUM_TO_UINT %22
+  BUFFER_WRITEI8 %17, 0i, %23, tbuffer
+  %34 = SEXTI8_INT %23
+  %35 = INT_TO_NUM %34
+  CHECK_BUFFER_MUTABLE %17, bb_exit_57
+   ; exit sync: R6, R5, {%35}
+  BUFFER_WRITEF64 %17, 100i, %35, tbuffer
+  CHECK_BUFFER_MUTABLE %17, bb_exit_58
+   ; exit sync: R5, {}
+  BUFFER_WRITEI8 %17, 108i, %23, tbuffer
+  CHECK_BUFFER_MUTABLE %17, bb_exit_59
+   ; exit sync: R5, {}
+  BUFFER_WRITEI8 %17, 109i, %23, tbuffer
+  CHECK_BUFFER_MUTABLE %17, bb_exit_60
+   ; exit sync: R5, {}
+  BUFFER_WRITEI8 %17, 2i, %23, tbuffer
+  %138 = BITAND_UINT %23, 255i
+  %139 = INT_TO_NUM %138
+  CHECK_BUFFER_MUTABLE %17, bb_exit_61
+   ; exit sync: R6, R5, {%139}
+  BUFFER_WRITEF64 %17, 116i, %139, tbuffer
+  CHECK_BUFFER_MUTABLE %17, bb_exit_62
+   ; exit sync: R5, {}
+  BUFFER_WRITEI8 %17, 124i, %23, tbuffer
+  CHECK_BUFFER_MUTABLE %17, bb_exit_63
+   ; exit sync: R5, {}
+  BUFFER_WRITEI8 %17, 125i, %23, tbuffer
+  CHECK_BUFFER_MUTABLE %17, bb_exit_64
+   ; exit sync: R5, {}
+  BUFFER_WRITEI16 %17, 4i, %23, tbuffer
+  %242 = SEXTI16_INT %23
+  %243 = INT_TO_NUM %242
+  CHECK_BUFFER_MUTABLE %17, bb_exit_65
+   ; exit sync: R6, R5, {%243}
+  BUFFER_WRITEF64 %17, 132i, %243, tbuffer
+  CHECK_BUFFER_MUTABLE %17, bb_exit_66
+   ; exit sync: R5, {}
+  BUFFER_WRITEI16 %17, 140i, %23, tbuffer
+  CHECK_BUFFER_MUTABLE %17, bb_exit_67
+   ; exit sync: R5, {}
+  BUFFER_WRITEI16 %17, 142i, %23, tbuffer
+  CHECK_BUFFER_MUTABLE %17, bb_exit_68
+   ; exit sync: R5, {}
+  BUFFER_WRITEI16 %17, 8i, %23, tbuffer
+  %346 = BITAND_UINT %23, 65535i
+  %347 = INT_TO_NUM %346
+  CHECK_BUFFER_MUTABLE %17, bb_exit_69
+   ; exit sync: R6, R5, {%347}
+  BUFFER_WRITEF64 %17, 148i, %347, tbuffer
+  CHECK_BUFFER_MUTABLE %17, bb_exit_70
+   ; exit sync: R5, {}
+  BUFFER_WRITEI16 %17, 156i, %23, tbuffer
+  CHECK_BUFFER_MUTABLE %17, bb_exit_71
+   ; exit sync: R5, {}
+  BUFFER_WRITEI16 %17, 158i, %23, tbuffer
+  CHECK_BUFFER_MUTABLE %17, bb_exit_72
+   ; exit sync: R5, {}
+  BUFFER_WRITEI32 %17, 12i, %23, tbuffer
+  %450 = TRUNCATE_UINT %23
+  %451 = INT_TO_NUM %450
+  CHECK_BUFFER_MUTABLE %17, bb_exit_73
+   ; exit sync: R6, R5, {%451}
+  BUFFER_WRITEF64 %17, 164i, %451, tbuffer
+  CHECK_BUFFER_MUTABLE %17, bb_exit_74
+   ; exit sync: R5, {}
+  BUFFER_WRITEI32 %17, 172i, %23, tbuffer
+  CHECK_BUFFER_MUTABLE %17, bb_exit_75
+   ; exit sync: R5, {}
+  BUFFER_WRITEI32 %17, 176i, %23, tbuffer
+  CHECK_BUFFER_MUTABLE %17, bb_exit_76
+   ; exit sync: R5, {}
+  BUFFER_WRITEI32 %17, 20i, %23, tbuffer
+  %555 = UINT_TO_NUM %23
+  CHECK_BUFFER_MUTABLE %17, bb_exit_77
+   ; exit sync: R6, R5, {%555}
+  BUFFER_WRITEF64 %17, 180i, %555, tbuffer
+  CHECK_BUFFER_MUTABLE %17, bb_exit_78
+   ; exit sync: R5, {}
+  BUFFER_WRITEI32 %17, 188i, %23, tbuffer
+  CHECK_BUFFER_MUTABLE %17, bb_exit_79
+   ; exit sync: R5, {}
+  BUFFER_WRITEI32 %17, 192i, %23, tbuffer
+  CHECK_BUFFER_MUTABLE %17, bb_exit_80
+   ; exit sync: R5, {}
+  %646 = LOAD_DOUBLE R2
+  %647 = NUM_TO_FLOAT %646
+  BUFFER_WRITEF32 %17, 28i, %647, tbuffer
+  %659 = FLOAT_TO_NUM %647
+  CHECK_BUFFER_MUTABLE %17, bb_exit_81
+   ; exit sync: R6, R5, {%659}
+  BUFFER_WRITEF64 %17, 196i, %659, tbuffer
+  CHECK_BUFFER_MUTABLE %17, exit(332)
+  BUFFER_WRITEF32 %17, 196i, %647, tbuffer
+  CHECK_BUFFER_MUTABLE %17, bb_exit_82
+   ; exit sync: R5, {}
+  BUFFER_WRITEF64 %17, 32i, %646, tbuffer
+  CHECK_BUFFER_MUTABLE %17, bb_exit_83
+   ; exit sync: R6, R5, {%646}
+  BUFFER_WRITEF64 %17, 204i, %646, tbuffer
+  CHECK_BUFFER_MUTABLE %17, exit(368)
+  BUFFER_WRITEF32 %17, 204i, %647, tbuffer
   INTERRUPT 372u
   RETURN R0, 0i
 )"

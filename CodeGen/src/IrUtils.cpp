@@ -334,6 +334,7 @@ IrValueKind getCmdValueKind(IrCmd cmd)
     case IrCmd::CHECK_NODE_NO_NEXT:
     case IrCmd::CHECK_NODE_VALUE:
     case IrCmd::CHECK_BUFFER_LEN:
+    case IrCmd::CHECK_BUFFER_MUTABLE:
     case IrCmd::CHECK_USERDATA_TAG:
     case IrCmd::CHECK_CMP_NUM:
     case IrCmd::CHECK_CMP_INT:

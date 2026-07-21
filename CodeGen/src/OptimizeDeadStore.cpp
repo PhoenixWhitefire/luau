@@ -1202,6 +1202,7 @@ static void markDeadStoresInInst(RemoveDeadStoreState& state, IrBuilder& build, 
         state.checkLiveIns(OP_B(inst), index, true);
         break;
     case IrCmd::CHECK_NODE_VALUE:
+    case IrCmd::CHECK_BUFFER_MUTABLE:
         state.checkLiveIns(OP_B(inst), index, true);
         break;
     case IrCmd::CHECK_BUFFER_LEN:

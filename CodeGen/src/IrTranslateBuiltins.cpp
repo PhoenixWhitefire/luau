@@ -957,6 +957,8 @@ static BuiltinImplResult translateBuiltinBufferWrite(
     IrOp buf, intIndex;
     translateBufferArgsAndCheckBounds(build, nparams, arg, args, arg3, size, pcpos, buf, intIndex, loadInt64);
 
+    build.inst(IrCmd::CHECK_BUFFER_MUTABLE, buf, build.vmExit(pcpos));
+
     IrOp numValue = loadInt64 ? builtinLoadInt64(build, arg3) : builtinLoadDouble(build, arg3);
 
     build.inst(writeCmd, buf, intIndex, convCmd == IrCmd::NOP ? numValue : build.inst(convCmd, numValue), build.constTag(LUA_TBUFFER));

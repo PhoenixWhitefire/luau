@@ -2379,6 +2379,12 @@ void IrLoweringX64::lowerInst(IrInst& inst, uint32_t index, const IrBlock& next)
         jumpOrAbortOnUndef(ConditionX64::Equal, OP_B(inst), index, next);
         break;
     }
+    case IrCmd::CHECK_BUFFER_MUTABLE:
+    {
+        build.cmp(byte[regOp(OP_A(inst)) + offsetof(Buffer, mode)], LUA_BHOST_IMMUTABLE);
+        jumpOrAbortOnUndef(ConditionX64::Equal, OP_B(inst), index, next);
+        break;
+    }
     case IrCmd::CHECK_BUFFER_LEN:
     {
         int minOffset = intOp(OP_C(inst));
@@ -4087,7 +4093,7 @@ RegisterX64 IrLoweringX64::regOp(IrOp op)
 OperandX64 IrLoweringX64::bufferAddrOp(IrOp bufferOp, IrOp indexOp, uint8_t tag)
 {
     CODEGEN_ASSERT(tag == LUA_TUSERDATA || tag == LUA_TBUFFER);
-    int dataOffset = tag == LUA_TBUFFER ? offsetof(Buffer, data) : offsetof(Udata, data);
+    int dataOffset = tag == LUA_TBUFFER ? offsetof(Buffer, inline_data) : offsetof(Udata, data);
 
     if (indexOp.kind == IrOpKind::Inst)
     {

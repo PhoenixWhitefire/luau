@@ -2493,6 +2493,16 @@ void IrLoweringA64::lowerInst(IrInst& inst, uint32_t index, const IrBlock& next)
         finalizeTargetLabel(OP_B(inst), index, fresh);
         break;
     }
+    case IrCmd::CHECK_BUFFER_MUTABLE:
+    {
+        Label fresh;
+        RegisterA64 temp = regs.allocTemp(KindA64::w);
+        build.ldrb(temp, mem(regOp(OP_A(inst)), offsetof(Buffer, mode)));
+        build.cmp(temp, uint16_t(LUA_BHOST_IMMUTABLE));
+        build.b(ConditionA64::Equal, getTargetLabel(OP_B(inst), index, fresh));
+        finalizeTargetLabel(OP_B(inst), index, fresh);
+        break;
+    }
     case IrCmd::CHECK_BUFFER_LEN:
     {
         int minOffset = intOp(OP_C(inst));
@@ -4182,7 +4192,7 @@ AddressA64 IrLoweringA64::tempAddr(IrOp op, int offset, RegisterA64 tempStorage)
 AddressA64 IrLoweringA64::tempAddrBuffer(IrOp bufferOp, IrOp indexOp, uint8_t tag)
 {
     CODEGEN_ASSERT(tag == LUA_TUSERDATA || tag == LUA_TBUFFER);
-    int dataOffset = tag == LUA_TBUFFER ? offsetof(Buffer, data) : offsetof(Udata, data);
+    int dataOffset = tag == LUA_TBUFFER ? offsetof(Buffer, inline_data) : offsetof(Udata, data);
 
     if (indexOp.kind == IrOpKind::Inst)
     {
