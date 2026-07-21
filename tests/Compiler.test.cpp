@@ -30,6 +30,7 @@ LUAU_FASTFLAG(LuauCompileStringInterpTargetTop)
 LUAU_FASTFLAG(LuauExportValueSyntax)
 LUAU_FASTFLAG(DebugLuauNoInline)
 LUAU_FASTFLAG(LuauEmitCallFeedback)
+LUAU_FASTFLAG(LuauDefaultArguments)
 
 using namespace Luau;
 
@@ -12033,6 +12034,70 @@ SETTABLEKS R0 R1 K0 ['Point']
 GETIMPORT R3 9 [table.freeze]
 MOVE R4 R1
 CALL R3 1 1
+RETURN R3 1
+)"
+    );
+}
+
+TEST_CASE("DefaultArguments")
+{
+    ScopedFastFlag sff{FFlag::LuauDefaultArguments, true};
+
+    // Assigning constants as default arguments
+    CHECK_EQ(
+        "\n" + compileFunction0(R"(
+function foo(x = 5) return x end
+)"),
+        R"(
+JUMPXEQKNIL R0 L0 NOT
+LOADK R0 K0 [5]
+L0: RETURN R0 1
+)"
+    );
+
+    // Accessing upvalue locals
+    CHECK_EQ(
+        "\n" + compileFunction0(R"(
+local CONST = 10
+function foo(x = CONST) return x end
+)"),
+        R"(
+JUMPXEQKNIL R0 L0 NOT
+GETUPVAL R0 0
+L0: RETURN R0 1
+)"
+    );
+
+    // More complicated statement that can't be folded
+    CHECK_EQ(
+        "\n" + compileFunction0(R"(
+local CONST1 = 10
+local CONST2 = 20
+function foo(x = math.max(CONST1, CONST2)) return x end
+)"),
+        R"(
+JUMPXEQKNIL R0 L0 NOT
+GETUPVAL R1 0
+GETUPVAL R2 1
+FASTCALL2 18 R1 R2 L0
+GETIMPORT R0 2 [math.max]
+CALL R0 2 1
+L0: RETURN R0 1
+)"
+    );
+
+    // Multiple default arguments
+    CHECK_EQ(
+        "\n" + compileFunction0(R"(
+function foo(x = 5, y, z = 15) return x + y + z end
+)"),
+        R"(
+JUMPXEQKNIL R0 L0 NOT
+LOADK R0 K0 [5]
+L0: JUMPXEQKNIL R2 L1 NOT
+LOADK R2 K1 [15]
+L1: ADD R4 R0 R1
+ADD R3 R4 R2
 RETURN R3 1
 )"
     );

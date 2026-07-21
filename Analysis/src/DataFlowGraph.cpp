@@ -15,6 +15,7 @@ LUAU_FASTFLAG(LuauSolverV2)
 LUAU_FASTFLAG(DebugLuauUserDefinedClasses)
 LUAU_FASTFLAGVARIABLE(LuauDoNotOverwriteAstDefs)
 LUAU_FASTFLAGVARIABLE(LuauAvoidTrivialPhis)
+LUAU_FASTFLAG(LuauDefaultArguments)
 
 namespace Luau
 {
@@ -1151,6 +1152,13 @@ DataFlowResult DataFlowGraphBuilder::visitFunction(AstExprFunction* f, NotNull<D
 
     if (f->returnAnnotation)
         visitTypePack(f->returnAnnotation);
+
+    if (FFlag::LuauDefaultArguments)
+    {
+        for (AstExpr* paramDefault : f->argsDefaults)
+            if (paramDefault)
+                visitExpr(paramDefault);
+    }
 
     // TODO: function body can be re-entrant, as in mutations that occurs at the end of the function can also be
     // visible to the beginning of the function, so statically speaking, the body of the function has an exit point

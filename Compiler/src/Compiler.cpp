@@ -34,6 +34,7 @@ LUAU_FASTFLAG(LuauIntegerType2)
 LUAU_FASTFLAGVARIABLE(LuauCompileStringInterpTargetTop)
 LUAU_FASTFLAG(DebugLuauNoInline)
 LUAU_FASTFLAGVARIABLE(LuauEmitCallFeedback)
+LUAU_FASTFLAG(LuauDefaultArguments)
 
 namespace Luau
 {
@@ -380,6 +381,33 @@ struct Compiler
         bytecode.emitABC(LOP_RETURN, freezeReg, 2, 0);
     }
 
+    void compileFunctionArgDefaults(AstExprFunction* func)
+    {
+        for (size_t i = 0; i < func->argsDefaults.size; ++i)
+        {
+            AstExpr* defaultValue = func->argsDefaults.data[i];
+            if (defaultValue == nullptr)
+                continue;
+
+            // Guaranteed to have been allocated by the caller.
+            Local* l = locals.find(func->args.data[i]);
+            LUAU_ASSERT(l && l->allocated);
+
+            size_t jumpLabel = bytecode.emitLabel();
+            // Compare our register to nil.
+            bytecode.emitAD(LOP_JUMPXEQKNIL, l->reg, 0);
+            // Invert condition.
+            bytecode.emitAux(0 | 0x80000000);
+
+            { // Make a new scope to save on registers.
+                RegScope rs_expr(this);
+                compileExpr(defaultValue, l->reg, true);
+            }
+
+            patchJump(defaultValue, jumpLabel, bytecode.emitLabel());
+        }
+    }
+
     uint32_t compileFunction(AstExprFunction* func, uint8_t& protoflags)
     {
         LUAU_TIMETRACE_SCOPE("Compiler::compileFunction", "Compiler");
@@ -411,6 +439,9 @@ struct Compiler
             pushLocal(func->args.data[i], uint8_t(args + self + i), kDefaultAllocPc);
 
         argCount = localStack.size();
+
+        if (FFlag::LuauDefaultArguments)
+            compileFunctionArgDefaults(func);
 
         AstStatBlock* stat = func->body;
 
@@ -951,6 +982,19 @@ struct Compiler
         std::vector<InlineArg> args;
         args.reserve(func->args.size);
 
+        bool hasArgDefaults = false;
+        if (FFlag::LuauDefaultArguments)
+        {
+            for (AstExpr* defaultValue : func->argsDefaults)
+            {
+                if (defaultValue)
+                {
+                    hasArgDefaults = true;
+                    break;
+                }
+            }
+        }
+
         // evaluate all arguments; note that we don't emit code for constant arguments (relying on constant folding)
         // note that compiler state (variable registers/values) does not change here - we defer that to a separate loop below to handle nested calls
         for (size_t i = 0; i < func->args.size; ++i)
@@ -978,47 +1022,54 @@ struct Compiler
                 // all remaining function arguments have been allocated and assigned to
                 break;
             }
-            else if (Variable* vv = variables.find(var); vv && vv->written)
-            {
-                // if the argument is mutated, we need to allocate a fresh register even if it's a constant
-                uint8_t reg = allocReg(arg, 1u);
-                uint32_t allocpc = bytecode.getDebugPC();
-
-                if (arg)
-                    compileExprTemp(arg, reg);
-                else
-                    bytecode.emitABC(LOP_LOADNIL, reg, 0, 0);
-
-                args.push_back({var, reg, {Constant::Type_Unknown}, allocpc});
-            }
-            else if (arg == nullptr)
-            {
-                // since the argument is not mutated, we can simply fold the value into the expressions that need it
-                args.push_back({var, kInvalidReg, {Constant::Type_Nil}});
-            }
-            else if (const Constant* cv = constants.find(arg); cv && cv->type != Constant::Type_Unknown)
-            {
-                // since the argument is not mutated, we can simply fold the value into the expressions that need it
-                args.push_back({var, kInvalidReg, *cv});
-            }
             else
             {
-                AstExprLocal* le = getExprLocal(arg);
-                Variable* lv = le ? variables.find(le->local) : nullptr;
+                Variable* vv = variables.find(var);
 
-                // if the argument is a local that isn't mutated, we will simply reuse the existing register
-                if (int reg = le ? getExprLocalReg(le) : -1; reg >= 0 && (!lv || !lv->written))
+                if (hasArgDefaults || (vv && vv->written))
                 {
-                    args.push_back({var, uint8_t(reg), {Constant::Type_Unknown}, kDefaultAllocPc, lv ? lv->init : nullptr});
+                    // If the argument is mutated or this function has default values, we need to allocate a fresh register even if it's a constant.
+                    // Default values assign into parameter registers and can reference other parameters, so reusing a caller local or folding a
+                    // parameter into locstants could mutate caller state or leave default expressions unable to reference parameters.
+                    uint8_t reg = allocReg(arg, 1u);
+                    uint32_t allocpc = bytecode.getDebugPC();
+
+                    if (arg)
+                        compileExprTemp(arg, reg);
+                    else
+                        bytecode.emitABC(LOP_LOADNIL, reg, 0, 0);
+
+                    args.push_back({var, reg, {Constant::Type_Unknown}, allocpc});
+                }
+                else if (arg == nullptr)
+                {
+                    // since the argument is not mutated, we can simply fold the value into the expressions that need it
+                    args.push_back({var, kInvalidReg, {Constant::Type_Nil}});
+                }
+                else if (const Constant* cv = constants.find(arg); cv && cv->type != Constant::Type_Unknown)
+                {
+                    // since the argument is not mutated, we can simply fold the value into the expressions that need it
+                    args.push_back({var, kInvalidReg, *cv});
                 }
                 else
                 {
-                    uint8_t temp = allocReg(arg, 1u);
-                    uint32_t allocpc = bytecode.getDebugPC();
+                    AstExprLocal* le = getExprLocal(arg);
+                    Variable* lv = le ? variables.find(le->local) : nullptr;
 
-                    compileExprTemp(arg, temp);
+                    // if the argument is a local that isn't mutated, we will simply reuse the existing register
+                    if (int reg = le ? getExprLocalReg(le) : -1; reg >= 0 && (!lv || !lv->written))
+                    {
+                        args.push_back({var, uint8_t(reg), {Constant::Type_Unknown}, kDefaultAllocPc, lv ? lv->init : nullptr});
+                    }
+                    else
+                    {
+                        uint8_t temp = allocReg(arg, 1u);
+                        uint32_t allocpc = bytecode.getDebugPC();
 
-                    args.push_back({var, temp, {Constant::Type_Unknown}, allocpc, arg});
+                        compileExprTemp(arg, temp);
+
+                        args.push_back({var, temp, {Constant::Type_Unknown}, allocpc, arg});
+                    }
                 }
             }
         }
@@ -1049,6 +1100,9 @@ struct Compiler
 
         // the inline frame will be used to compile return statements as well as to reject recursive inlining attempts
         inlineFrames.push_back({func, oldLocals, target, targetCount});
+
+        if (FFlag::LuauDefaultArguments)
+            compileFunctionArgDefaults(func);
 
         // this pass tracks which calls are builtins and can be compiled more efficiently
         analyzeBuiltins(inlineBuiltins, globals, variables, options, func->body, names);
@@ -5100,6 +5154,7 @@ void compileOrThrow(BytecodeBuilder& bytecode, const ParseResult& parseResult, A
         /* genericPacks= */ AstArray<AstGenericTypePack*>(),
         /* self= */ nullptr,
         AstArray<AstLocal*>(),
+        AstArray<AstExpr*>(),
         /* vararg= */ true,
         /* varargLocation= */ Luau::Location(),
         root,

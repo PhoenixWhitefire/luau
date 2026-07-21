@@ -33,6 +33,7 @@ LUAU_FASTFLAG(LuauInstantiateInSubtyping)
 LUAU_FASTFLAG(LuauExportValueSyntax)
 LUAU_FASTFLAG(LuauExportValueTypecheck)
 LUAU_FASTFLAG(DebugLuauUserDefinedClasses)
+LUAU_FASTFLAG(LuauDefaultArguments)
 
 namespace Luau
 {
@@ -3993,8 +3994,10 @@ std::pair<TypeId, ScopePtr> TypeChecker::checkFunctionSignature(
         expectedArgsEnd = end(expectedFunctionType->argTypes);
     }
 
-    for (AstLocal* local : expr.args)
+    for (size_t i = 0; i < expr.args.size; i++)
     {
+        AstLocal* local = expr.args.data[i];
+
         TypeId argType = nullptr;
 
         if (local->annotation)
@@ -4005,7 +4008,24 @@ std::pair<TypeId, ScopePtr> TypeChecker::checkFunctionSignature(
             if (get<ErrorType>(follow(argType)))
                 argType = anyIfNonstrict(freshType(funScope));
         }
-        else
+
+        if (FFlag::LuauDefaultArguments)
+        {
+            if (expr.argsDefaults.data[i])
+            {
+                // We have a default value, so infer type from that
+                TypeId defaultArgType = checkExpr(funScope, *expr.argsDefaults.data[i]->asExpr()).type;
+                if (get<ErrorType>(follow(defaultArgType)))
+                    defaultArgType = anyIfNonstrict(freshType(funScope));
+
+                if (argType == nullptr)
+                    argType = defaultArgType;
+                else
+                    unify(defaultArgType, argType, scope, expr.argsDefaults.data[i]->location);
+            }
+        }
+
+        if (argType == nullptr)
         {
             if (expectedFunctionType && !isNonstrictMode())
             {
@@ -4025,7 +4045,15 @@ std::pair<TypeId, ScopePtr> TypeChecker::checkFunctionSignature(
         }
 
         funScope->bindings[local] = {argType, local->location};
-        argTypes.push_back(argType);
+
+        if (FFlag::LuauDefaultArguments && expr.argsDefaults.data[i])
+        {
+            argTypes.push_back(unionOfTypes(nilType, argType, scope, expr.argsDefaults.data[i]->location));
+        }
+        else
+        {
+            argTypes.push_back(argType);
+        }
 
         if (expectedArgsCurr != expectedArgsEnd)
             ++expectedArgsCurr;
@@ -4348,7 +4376,8 @@ void TypeChecker::checkArgumentList(
                         namePath = *path;
 
                     state.reportError(
-                        TypeError{
+                        TypeError
+                        {
                             funName.location,
                             CountMismatch{minParams, optMaxParams, paramIndex, CountMismatch::Context::Arg, isVariadic, std::move(namePath)}
                         }

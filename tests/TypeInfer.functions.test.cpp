@@ -25,6 +25,7 @@ LUAU_FASTFLAG(LuauBidirectionalInferenceVariadics)
 LUAU_FASTFLAG(LuauBidirectionalInferenceBetterLambdaHandling)
 LUAU_FASTFLAG(LuauHigherOrderGenericInference)
 LUAU_FASTFLAG(LuauCollapseDirectBoundCycles)
+LUAU_FASTFLAG(LuauDefaultArguments)
 
 TEST_SUITE_BEGIN("TypeInferFunctions");
 
@@ -4366,6 +4367,38 @@ TEST_CASE_FIXTURE(BuiltinsFixture, "pass_generic_function_to_pcall")
     LUAU_CHECK_NO_ERRORS(result);
 
     CHECK("number" == toString(requireType("result")));
+}
+
+TEST_CASE_FIXTURE(Fixture, "default_argument_infers_parameter_type")
+{
+    ScopedFastFlag sffs[] = {
+        {FFlag::DebugLuauForceOldSolver, false},
+        {FFlag::LuauDefaultArguments, true},
+    };
+
+    CheckResult result = check(R"(
+        local function foo(bar = 1)
+            return bar
+        end
+    )");
+
+    LUAU_REQUIRE_NO_ERRORS(result);
+    CHECK_EQ("(number?) -> number", toString(requireType("foo")));
+}
+
+TEST_CASE_FIXTURE(Fixture, "default_argument_is_checked_against_parameter_annotation")
+{
+    ScopedFastFlag sffs[] = {
+        {FFlag::DebugLuauForceOldSolver, false},
+        {FFlag::LuauDefaultArguments, true},
+    };
+
+    CheckResult result = check(R"(
+        local function foo(bar: string = 1)
+        end
+    )");
+
+    CHECK(!result.errors.empty());
 }
 
 TEST_SUITE_END();
