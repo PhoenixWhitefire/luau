@@ -1544,10 +1544,16 @@ void* lua_newexternalbuffer(lua_State* L, size_t sz, void* data, void* userdata,
     return b->data;
 }
 
-int lua_isbuffermutable(lua_State* L, int idx)
+int lua_getbuffermode(lua_State* L, int idx)
 {
     StkId p = index2addr(L, idx);
-    return ttisbuffer(p) && bufvalue(p)->mode != 1;
+    return ttisbuffer(p) ? bufvalue(p)->mode : LUA_BLUAU;
+}
+
+void* lua_getbufferuserdata(lua_State* L, int idx)
+{
+    StkId p = index2addr(L, idx);
+    return ttisbuffer(p) ? bufvalue(p)->userdata : nullptr;
 }
 
 static const char* aux_upvalue(StkId fi, int n, TValue** val)

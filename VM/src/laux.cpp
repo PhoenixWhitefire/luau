@@ -161,7 +161,7 @@ void* luaL_checkbuffermutable(lua_State* L, int narg, size_t* len)
     void* b = lua_tobuffer(L, narg, len);
     if (!b)
         tag_error(L, narg, LUA_TBUFFER);
-    if (!lua_isbuffermutable(L, narg))
+    if (lua_getbuffermode(L, narg) == LUA_BHOST_IMMUTABLE)
         luaL_error(L, "buffer is immutable");
     return b;
 }

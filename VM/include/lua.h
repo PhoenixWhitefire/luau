@@ -210,6 +210,10 @@ LUA_API void* lua_newuserdatadtor(lua_State* L, size_t sz, lua_Destructor dtor);
 
 LUA_API void* lua_newbuffer(lua_State* L, size_t sz);
 
+#define LUA_BLUAU 0
+#define LUA_BHOST_IMMUTABLE 1
+#define LUA_BHOST_MUTABLE 2
+
 typedef void (*lua_BufferFree)(lua_State* L, void* data, size_t sz, void* userdata);
 LUA_API void* lua_newexternalbuffer(lua_State* L, size_t sz, void* data, void* userdata, lua_BufferFree free_cb, int mode);
 
@@ -445,7 +449,8 @@ LUA_API void lua_unref(lua_State* L, int ref);
 #define lua_isclass(L, n) (lua_type(L, (n)) == LUA_TCLASS)
 #define lua_isobject(L, n) (lua_type(L, (n)) == LUA_TOBJECT)
 
-LUA_API int lua_isbuffermutable(lua_State* L, int idx);
+LUA_API int lua_getbuffermode(lua_State* L, int idx);
+LUA_API void* lua_getbufferuserdata(lua_State* L, int idx);
 
 #define lua_pushliteral(L, s) lua_pushlstring(L, "" s, (sizeof(s) / sizeof(char)) - 1)
 #define lua_pushcfunction(L, fn, debugname) lua_pushcclosurek(L, fn, debugname, 0, NULL)
