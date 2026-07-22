@@ -379,8 +379,10 @@ target_sources(Luau.VM PRIVATE
     VM/include/lua.h
     VM/include/luaconf.h
     VM/include/lualib.h
+    VM/include/lapix.h
 
     VM/src/lapi.cpp
+    VM/src/lapix.cpp
     VM/src/laux.cpp
     VM/src/lbaselib.cpp
     VM/src/lbitlib.cpp
