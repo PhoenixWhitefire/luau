@@ -2,5 +2,5 @@
 
 ## By FFlag
 
-- LuauExternallyManagedBuffers: @cheesycod
+- LuauExternallyManagedBuffers and LuauBufferIsFrozen: @cheesycod
 - LuauDefaultArguments: @Bottersnike

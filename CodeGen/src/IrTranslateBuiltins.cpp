@@ -906,6 +906,22 @@ static void translateBufferArgsAndCheckBounds(
     build.inst(IrCmd::CHECK_BUFFER_LEN, buf, intIndex, build.constInt(0), build.constInt(size), build.undef(), build.vmExit(pcpos));
 }
 
+static BuiltinImplResult translateBuiltinBufferIsFrozen(IrBuilder& build, int nparams, int ra, int arg, IrOp args, int nresults, int pcpos)
+{
+    if (nparams < 1 || nresults > 1)
+        return {BuiltinImplType::None, -1};
+
+    build.loadAndCheckTag(build.vmReg(arg), LUA_TBUFFER, build.vmExit(pcpos));
+
+    IrOp buf = build.inst(IrCmd::LOAD_POINTER, build.vmReg(arg));
+    IrOp isfrozen = build.inst(IrCmd::BUFFER_ISFROZEN, buf);
+
+    build.inst(IrCmd::STORE_INT, build.vmReg(ra), isfrozen);
+    build.inst(IrCmd::STORE_TAG, build.vmReg(ra), build.constTag(LUA_TBOOLEAN));
+
+    return {BuiltinImplType::Full, 1};
+}
+
 static BuiltinImplResult translateBuiltinBufferRead(
     IrBuilder& build,
     int nparams,
@@ -1938,6 +1954,8 @@ BuiltinImplResult translateBuiltin(
                 build, nparams, ra, arg, args, arg3, nresults, pcpos, IrCmd::BUFFER_READI64, 8, IrCmd::NOP, IrCmd::STORE_INT64, LUA_TINTEGER
             );
         return {BuiltinImplType::None, -1};
+    case LBF_BUFFER_ISFROZEN:
+        return translateBuiltinBufferIsFrozen(build, nparams, ra, arg, args, nresults, pcpos);
     case LBF_BUFFER_WRITEINTEGER:
         if (FFlag::LuauCodegenBufferInteger)
             return translateBuiltinBufferWrite(build, nparams, ra, arg, args, arg3, nresults, pcpos, IrCmd::BUFFER_WRITEI64, 8, IrCmd::NOP, true);

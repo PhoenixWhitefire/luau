@@ -301,6 +301,8 @@ const char* getCmdName(IrCmd cmd)
         return "TABLE_SETNUM";
     case IrCmd::STRING_LEN:
         return "STRING_LEN";
+    case IrCmd::BUFFER_ISFROZEN:
+        return "BUFFER_ISFROZEN";
     case IrCmd::NEW_TABLE:
         return "NEW_TABLE";
     case IrCmd::DUP_TABLE:

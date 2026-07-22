@@ -1853,6 +1853,15 @@ void IrLoweringX64::lowerInst(IrInst& inst, uint32_t index, const IrBlock& next)
         build.mov(inst.regX64, dword[ptr + offsetof(TString, len)]);
         break;
     }
+    case IrCmd::BUFFER_ISFROZEN:
+    {
+        RegisterX64 ptr = regOp(OP_A(inst));
+        inst.regX64 = regs.allocReg(SizeX64::dword, index);
+        build.xor_(inst.regX64, inst.regX64);
+        build.cmp(byte[ptr + offsetof(Buffer, mode)], LUA_BHOST_IMMUTABLE);
+        build.setcc(ConditionX64::Equal, byteReg(inst.regX64));
+        break;
+    }
     case IrCmd::NEW_TABLE:
     {
         IrCallWrapperX64 callWrap(regs, build, index);

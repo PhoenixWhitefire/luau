@@ -2495,6 +2495,17 @@ static int luauF_bufferwritelong(lua_State* L, StkId res, TValue* arg0, int nres
     return -1;
 }
 
+static int luauF_bufferisfrozen(lua_State* L, StkId res, TValue* arg0, int nresults, StkId args, int nparams)
+{
+    if (nparams >= 1 && nresults <= 1 && ttisbuffer(arg0))
+    {
+        setbvalue(res, bufvalue(arg0)->mode == LUA_BHOST_IMMUTABLE);
+        return 1;
+    }
+
+    return -1;
+}
+
 static int luauF_missing(lua_State* L, StkId res, TValue* arg0, int nresults, StkId args, int nparams)
 {
     return -1;
@@ -2759,6 +2770,8 @@ const luau_FastFunction luauF_table[256] = {
 
     luauF_bufferreadlong,
     luauF_bufferwritelong,
+
+    luauF_bufferisfrozen,
 
 // When adding builtins, add them above this line; what follows is 64 "dummy" entries with luauF_missing fallback.
 // This is important so that older versions of the runtime that don't support newer builtins automatically fall back via luauF_missing.

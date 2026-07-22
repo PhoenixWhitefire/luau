@@ -518,6 +518,10 @@ static void applyBuiltinCall(LuauBuiltinFunction bfid, BytecodeTypes& types)
         types.b = LBC_TYPE_NUMBER;
         types.c = LBC_TYPE_INTEGER;
         break;
+    case LBF_BUFFER_ISFROZEN:
+        types.result = LBC_TYPE_BOOLEAN;
+        types.a = LBC_TYPE_BUFFER;
+        break;
     case LBF_TABLE_INSERT:
         types.result = LBC_TYPE_NIL;
         types.a = LBC_TYPE_TABLE;

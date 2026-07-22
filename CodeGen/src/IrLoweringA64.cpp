@@ -1804,6 +1804,16 @@ void IrLoweringA64::lowerInst(IrInst& inst, uint32_t index, const IrBlock& next)
         build.ldr(inst.regA64, mem(regOp(OP_A(inst)), offsetof(TString, len)));
         break;
     }
+    case IrCmd::BUFFER_ISFROZEN:
+    {
+        inst.regA64 = regs.allocReg(KindA64::w, index);
+        RegisterA64 temp = regs.allocTemp(KindA64::w);
+
+        build.ldrb(temp, mem(regOp(OP_A(inst)), offsetof(Buffer, mode)));
+        build.cmp(temp, uint16_t(LUA_BHOST_IMMUTABLE));
+        build.cset(inst.regA64, ConditionA64::Equal);
+        break;
+    }
     case IrCmd::TABLE_SETNUM:
     {
         // note: we need to call regOp before spill so that we don't do redundant reloads

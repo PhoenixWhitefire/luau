@@ -277,6 +277,7 @@ IrValueKind getCmdValueKind(IrCmd cmd)
     case IrCmd::TABLE_SETNUM:
         return IrValueKind::Pointer;
     case IrCmd::STRING_LEN:
+    case IrCmd::BUFFER_ISFROZEN:
         return IrValueKind::Int;
     case IrCmd::NEW_TABLE:
     case IrCmd::DUP_TABLE:

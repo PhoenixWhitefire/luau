@@ -9,6 +9,7 @@
 #endif
 
 LUAU_FASTFLAG(LuauIntegerLibrary)
+LUAU_FASTFLAGVARIABLE(LuauBufferIsFrozen)
 
 #include <string.h>
 
@@ -235,6 +236,15 @@ static int buffer_writestring(lua_State* L)
     return 0;
 }
 
+static int buffer_isfrozen(lua_State* L)
+{
+    size_t len = 0;
+    luaL_checkbuffer(L, 1, &len);
+
+    lua_pushboolean(L, lua_getbuffermode(L, 1) == LUA_BHOST_IMMUTABLE);
+    return 1;
+}
+
 static int buffer_len(lua_State* L)
 {
     size_t len = 0;
@@ -436,6 +446,12 @@ int luaopen_buffer(lua_State* L)
         luaL_register(L, LUA_BUFFERLIBNAME, bufferlib);
     else
         luaL_register(L, LUA_BUFFERLIBNAME, bufferlib_NOINTEGER);
+
+    if (FFlag::LuauBufferIsFrozen)
+    {
+        lua_pushcfunction(L, buffer_isfrozen, "isfrozen");
+        lua_setfield(L, -2, "isfrozen");
+    }
 
     return 1;
 }

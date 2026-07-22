@@ -10,6 +10,7 @@
 #include <string.h>
 
 LUAU_FASTFLAG(LuauExternallyManagedBuffers)
+LUAU_FASTFLAG(LuauBufferIsFrozen)
 
 static int s_externalBufferFreeCount = 0;
 static void test_buffer_free_cb(lua_State* L, void* data, size_t sz, void* userdata)
@@ -85,6 +86,7 @@ TEST_CASE("ExternalBufferMutable")
 TEST_CASE("ExternalBufferImmutable")
 {
     ScopedFastFlag sff{FFlag::LuauExternallyManagedBuffers, true};
+    ScopedFastFlag sff2{FFlag::LuauBufferIsFrozen, true};
     std::unique_ptr<lua_State, void (*)(lua_State*)> state(luaL_newstate(), lua_close);
     lua_State* L = state.get();
     luaL_openlibs(L);
@@ -108,6 +110,8 @@ TEST_CASE("ExternalBufferImmutable")
     const char* lua_read_code = R"(
         local val = buffer.readu8(ext_buf, 0)
         assert(val == 55)
+        assert(buffer.isfrozen(ext_buf) == true)
+        assert(buffer.isfrozen(buffer.create(10)) == false)
     )";
     
     CHECK(dostring(L, lua_read_code) == 0);
@@ -130,6 +134,7 @@ TEST_CASE("ExternalBufferImmutable")
 TEST_CASE("ExternalBufferImmutable_NCG")
 {
     ScopedFastFlag sff{FFlag::LuauExternallyManagedBuffers, true};
+    ScopedFastFlag sff2{FFlag::LuauBufferIsFrozen, true};
     std::unique_ptr<lua_State, void (*)(lua_State*)> state(luaL_newstate(), lua_close);
     lua_State* L = state.get();
     luaL_openlibs(L);
@@ -151,6 +156,8 @@ TEST_CASE("ExternalBufferImmutable_NCG")
         const char* lua_read_code = R"(
             local val = buffer.readu8(ext_buf, 0)
             assert(val == 55)
+            assert(buffer.isfrozen(ext_buf) == true)
+            assert(buffer.isfrozen(buffer.create(10)) == false)
         )";
         
         CHECK(dostring_ncg(L, lua_read_code) == 0);

@@ -460,6 +460,10 @@ enum class IrCmd : uint8_t
     // A: pointer (string)
     STRING_LEN,
 
+    // Check if buffer is frozen
+    // A: pointer (Buffer)
+    BUFFER_ISFROZEN,
+
     // Allocate new table
     // A: unsigned int (array element count)
     // B: unsigned int (node element count)
