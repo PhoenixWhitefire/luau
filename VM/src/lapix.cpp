@@ -41,27 +41,6 @@ LUA_API void lua_gcdump(lua_State* L, void* file, const char* (*categoryName)(lu
     luaC_dump(L, file, categoryName);
 }
 
-LUA_API LuauTryCallbackRet luau_try(lua_State* L, LuauTryCallback func, void* data) {
-    try { 
-        void* a = func(L, data); 
-        return LuauTryCallbackRet{0, a}; 
-    } catch (const std::exception& e) {
-        try {
-            if (lua_gettop(L) > 0) {
-                lua_checkstack(L, 1);
-                lua_pushstring(L, e.what()); 
-                return LuauTryCallbackRet{1, nullptr};
-            } else {
-                return LuauTryCallbackRet{2, nullptr};
-            }
-        } catch (...) { 
-            return LuauTryCallbackRet{2, nullptr}; 
-        }
-    } catch (...) { 
-        throw;
-    }
-}
-
 LUA_API int luau_setfflag(const char* name, int value)
 {
     for (Luau::FValue<bool>* flag = Luau::FValue<bool>::list; flag; flag = flag->next)
