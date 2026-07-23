@@ -168,6 +168,8 @@ struct PrimitiveType
         Boolean,
         Number,
         Integer,
+        SignedInteger,
+        UnsignedInteger,
         String,
         Thread,
         Function,
@@ -1032,6 +1034,8 @@ public:
     const TypeId nilType;
     const TypeId numberType;
     const TypeId integerType;
+    const TypeId signedIntegerType;
+    const TypeId unsignedIntegerType;
     const TypeId stringType;
     const TypeId booleanType;
     const TypeId threadType;

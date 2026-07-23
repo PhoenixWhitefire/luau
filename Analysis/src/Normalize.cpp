@@ -1892,6 +1892,10 @@ NormalizationResult Normalizer::unionNormalWithTy(
             here.numbers = there;
         else if (FFlag::LuauIntegerType2 && (ptv->type == PrimitiveType::Integer))
             here.integers = there;
+        else if (ptv->type == PrimitiveType::SignedInteger)
+            here.signedIntegers = there;
+        else if (ptv->type == PrimitiveType::UnsignedInteger)
+            here.unsignedIntegers = there;
         else if (ptv->type == PrimitiveType::String)
             here.strings.resetToString();
         else if (ptv->type == PrimitiveType::Thread)
@@ -2126,6 +2130,12 @@ void Normalizer::subtractPrimitive(NormalizedType& here, TypeId ty)
         break;
     case PrimitiveType::Integer:
         here.integers = builtinTypes->neverType;
+        break;
+    case PrimitiveType::SignedInteger:
+        here.signedIntegers = builtinTypes->neverType;
+        break;
+    case PrimitiveType::UnsignedInteger:
+        here.unsignedIntegers = builtinTypes->neverType;
         break;
     case PrimitiveType::String:
         here.strings.resetToNever();
@@ -3421,6 +3431,8 @@ NormalizationResult Normalizer::intersectNormalWithTy(
         TypeId nils = here.nils;
         TypeId numbers = here.numbers;
         TypeId integers = here.integers;
+        TypeId signedIntegers = here.signedIntegers;
+        TypeId unsignedIntegers = here.unsignedIntegers;
         NormalizedStringType strings = std::move(here.strings);
         NormalizedFunctionType functions = std::move(here.functions);
         TypeId threads = here.threads;
@@ -3437,6 +3449,10 @@ NormalizationResult Normalizer::intersectNormalWithTy(
             here.numbers = numbers;
         else if (FFlag::LuauIntegerType2 && (ptv->type == PrimitiveType::Integer))
             here.integers = integers;
+        else if (ptv->type == PrimitiveType::SignedInteger)
+            here.signedIntegers = signedIntegers;
+        else if (ptv->type == PrimitiveType::UnsignedInteger)
+            here.unsignedIntegers = unsignedIntegers;
         else if (ptv->type == PrimitiveType::String)
             here.strings = std::move(strings);
         else if (ptv->type == PrimitiveType::Thread)

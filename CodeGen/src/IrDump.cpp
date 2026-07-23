@@ -89,6 +89,10 @@ static const char* getTagName(uint8_t tag)
         return "tobject";
     case LUA_TINTEGER:
         return "tinteger";
+    case LUA_TINT64:
+        return "tint64";
+    case LUA_TUINT64:
+        return "tuint64";
     default:
         CODEGEN_ASSERT(!"Unknown type tag");
         LUAU_UNREACHABLE();

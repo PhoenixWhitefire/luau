@@ -218,6 +218,14 @@ struct NormalizedType
     // This type is either never or integer.
     TypeId integers;
 
+    // The signed integer part of the type.
+    // This type is either never or signedInteger.
+    TypeId signedIntegers;
+
+    // The unsigned integer part of the type.
+    // This type is either never or unsignedInteger.
+    TypeId unsignedIntegers;
+
     // The string part of the type.
     // This may be the `string` type, or a union of singletons.
     NormalizedStringType strings;

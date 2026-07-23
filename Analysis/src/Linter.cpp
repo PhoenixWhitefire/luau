@@ -118,6 +118,8 @@ static bool similar(AstExpr* lhs, AstExpr* rhs)
     CASE(AstExprConstantBool) return le->value == re->value;
     CASE(AstExprConstantNumber) return le->value == re->value;
     CASE(AstExprConstantInteger) return le->value == re->value;
+    CASE(AstExprConstantSignedInteger) return le->value == re->value;
+    CASE(AstExprConstantUnsignedInteger) return le->value == re->value;
     CASE(AstExprConstantString) return le->value.size == re->value.size && memcmp(le->value.data, re->value.data, le->value.size) == 0;
     CASE(AstExprLocal) return le->local == re->local;
     CASE(AstExprGlobal) return le->name == re->name;

@@ -1393,6 +1393,10 @@ void TypeChecker2::visit(AstExpr* expr, ValueContext context)
         return visit(e);
     else if (auto e = expr->as<AstExprConstantInteger>())
         return visit(e);
+    else if (auto e = expr->as<AstExprConstantSignedInteger>())
+        return visit(e);
+    else if (auto e = expr->as<AstExprConstantUnsignedInteger>())
+        return visit(e);
     else if (auto e = expr->as<AstExprConstantString>())
         return visit(e);
     else if (auto e = expr->as<AstExprLocal>())
@@ -1484,6 +1488,30 @@ void TypeChecker2::visit(AstExprConstantInteger* expr)
 {
 #if defined(LUAU_ENABLE_ASSERT)
     const TypeId bestType = builtinTypes->integerType;
+    const TypeId inferredType = lookupType(expr);
+    NotNull<Scope> scope{findInnermostScope(expr->location)};
+
+    const SubtypingResult r = subtyping->isSubtype(bestType, inferredType, scope);
+    LUAU_ASSERT(r.isSubtype || isErrorSuppressing(expr->location, inferredType));
+#endif
+}
+
+void TypeChecker2::visit(AstExprConstantSignedInteger* expr)
+{
+#if defined(LUAU_ENABLE_ASSERT)
+    const TypeId bestType = builtinTypes->signedIntegerType;
+    const TypeId inferredType = lookupType(expr);
+    NotNull<Scope> scope{findInnermostScope(expr->location)};
+
+    const SubtypingResult r = subtyping->isSubtype(bestType, inferredType, scope);
+    LUAU_ASSERT(r.isSubtype || isErrorSuppressing(expr->location, inferredType));
+#endif
+}
+
+void TypeChecker2::visit(AstExprConstantUnsignedInteger* expr)
+{
+#if defined(LUAU_ENABLE_ASSERT)
+    const TypeId bestType = builtinTypes->unsignedIntegerType;
     const TypeId inferredType = lookupType(expr);
     NotNull<Scope> scope{findInnermostScope(expr->location)};
 

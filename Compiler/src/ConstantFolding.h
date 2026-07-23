@@ -21,6 +21,8 @@ struct Constant
         Type_Boolean,
         Type_Number,
         Type_Integer,
+        Type_SignedInteger,
+        Type_UnsignedInteger,
         Type_Vector,
         Type_String,
         Type_Table,
@@ -34,6 +36,8 @@ struct Constant
         bool valueBoolean;
         double valueNumber;
         int64_t valueInteger64;
+        int64_t valueSignedInteger64;
+        uint64_t valueUnsignedInteger64;
         float valueVector[4];
         size_t valueTable;                 // index pointing to constant table entry with table's constant properties
         const char* valueString = nullptr; // length stored in stringLength

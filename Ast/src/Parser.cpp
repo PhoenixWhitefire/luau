@@ -34,6 +34,7 @@ LUAU_FASTFLAGVARIABLE(LuauCstAttr)
 LUAU_FASTFLAGVARIABLE(LuauStoreConstKeywordBegin)
 LUAU_FASTFLAGVARIABLE(LuauNoDuplicateBinaryPrefix)
 LUAU_FASTFLAGVARIABLE(LuauTrackPrefixLocal)
+LUAU_FASTFLAGVARIABLE(LuauParseI64U64)
 
 // Clip with DebugLuauReportReturnTypeVariadicWithTypeSuffix
 bool luau_telemetry_parsed_return_type_variadic_with_type_suffix = false;
@@ -3993,6 +3994,104 @@ static ConstantNumberParseResult parseInteger64(int64_t& result, const char* dat
     return ConstantNumberParseResult::Ok;
 }
 
+static ConstantNumberParseResult parseSignedInteger64(int64_t& result, const char* data, int base)
+{
+    LUAU_ASSERT(base == 2 || base == 10 || base == 16);
+
+    char* end = nullptr;
+
+    if (base == 10)
+    {
+        result = strtoll(data, &end, 10);
+
+        if (((result == INT64_MIN) || (result == INT64_MAX)) && (errno == ERANGE))
+        {
+            // 'errno' might have been set before we called 'strtoll', but we don't want the overhead of resetting a TLS variable on each call
+            // so we only reset it when we get a result that might be an out-of-range error and parse again to make sure
+            errno = 0;
+            result = strtoll(data, &end, 10);
+
+            if (errno == ERANGE)
+                return ConstantNumberParseResult::IntOverflow;
+        }
+    }
+    else
+    {
+        if (FFlag::LuauNoDuplicateBinaryPrefix)
+        {
+            if (base == 2 && data[0] == '0' && (data[1] == 'b' || data[1] == 'B'))
+                return ConstantNumberParseResult::Malformed;
+        }
+
+        // hex and binary literals represent bit patterns covering the full uint64 range
+        unsigned long long u = strtoull(data, &end, base);
+
+        if ((u == UINT64_MAX) && (errno == ERANGE))
+        {
+            // 'errno' might have been set before we called 'strtoull', but we don't want the overhead of resetting a TLS variable on each call
+            // so we only reset it when we get a result that might be an out-of-range error and parse again to make sure
+            errno = 0;
+            u = strtoull(data, &end, base);
+
+            if (errno == ERANGE)
+                return base == 2 ? ConstantNumberParseResult::BinOverflow : ConstantNumberParseResult::HexOverflow;
+        }
+
+        result = (int64_t)u;
+    }
+
+    return ConstantNumberParseResult::Ok;
+}
+
+static ConstantNumberParseResult parseUnsignedInteger64(uint64_t& result, const char* data, int base)
+{
+    LUAU_ASSERT(base == 2 || base == 10 || base == 16);
+
+    char* end = nullptr;
+
+    if (base == 10)
+    {
+        result = strtoull(data, &end, 10);
+
+        if (((result == 0) || (result == UINT64_MAX)) && (errno == ERANGE))
+        {
+            // 'errno' might have been set before we called 'strtoll', but we don't want the overhead of resetting a TLS variable on each call
+            // so we only reset it when we get a result that might be an out-of-range error and parse again to make sure
+            errno = 0;
+            result = strtoull(data, &end, 10);
+
+            if (errno == ERANGE)
+                return ConstantNumberParseResult::IntOverflow;
+        }
+    }
+    else
+    {
+        if (FFlag::LuauNoDuplicateBinaryPrefix)
+        {
+            if (base == 2 && data[0] == '0' && (data[1] == 'b' || data[1] == 'B'))
+                return ConstantNumberParseResult::Malformed;
+        }
+
+        // hex and binary literals represent bit patterns covering the full uint64 range
+        uint64_t u = strtoull(data, &end, base);
+
+        if ((u == UINT64_MAX) && (errno == ERANGE))
+        {
+            // 'errno' might have been set before we called 'strtoull', but we don't want the overhead of resetting a TLS variable on each call
+            // so we only reset it when we get a result that might be an out-of-range error and parse again to make sure
+            errno = 0;
+            u = strtoull(data, &end, base);
+
+            if (errno == ERANGE)
+                return base == 2 ? ConstantNumberParseResult::BinOverflow : ConstantNumberParseResult::HexOverflow;
+        }
+
+        result = u;
+    }
+
+    return ConstantNumberParseResult::Ok;
+}
+
 static ConstantNumberParseResult parseDouble(double& result, const char* data)
 {
     // binary literal
@@ -5000,16 +5099,22 @@ AstExpr* Parser::parseNumber()
         scratchData.erase(std::remove(scratchData.begin(), scratchData.end(), '_'), scratchData.end());
     }
 
+    int base = 10;
+    const char* str = scratchData.c_str();
+
+    if ((strncmp(scratchData.c_str(), "0x", 2) == 0) || (strncmp(scratchData.c_str(), "0X", 2) == 0))
+        base = 16;
+        // pass in '0x' prefix, it's handled by strtoll
+    else if ((strncmp(scratchData.c_str(), "0b", 2) == 0) || (strncmp(scratchData.c_str(), "0B", 2) == 0))
+    {
+        base = 2;
+        str += 2;
+    }
+
     if (FFlag::LuauIntegerType2 && (scratchData.back() == 'i'))
     {
         int64_t value = 0;
-        ConstantNumberParseResult result;
-        if ((strncmp(scratchData.c_str(), "0x", 2) == 0) || (strncmp(scratchData.c_str(), "0X", 2) == 0))
-            result = parseInteger64(value, scratchData.c_str(), 16); // pass in '0x' prefix, it's handled by strtoll
-        else if ((strncmp(scratchData.c_str(), "0b", 2) == 0) || (strncmp(scratchData.c_str(), "0B", 2) == 0))
-            result = parseInteger64(value, scratchData.c_str() + 2, 2);
-        else
-            result = parseInteger64(value, scratchData.c_str(), 10);
+        ConstantNumberParseResult result = parseInteger64(value, str, base);
 
         nextLexeme();
 
@@ -5022,6 +5127,42 @@ AstExpr* Parser::parseNumber()
         AstExprConstantInteger* node = allocator.alloc<AstExprConstantInteger>(start, value, result);
         if (options.storeCstData)
             cstNodeMap[node] = allocator.alloc<CstExprConstantInteger>(sourceData);
+        return node;
+    }
+    else if (FFlag::LuauParseI64U64 && scratchData.find("i64") == scratchData.size() - 3)
+    {
+        int64_t value = 0;
+        ConstantNumberParseResult result = parseSignedInteger64(value, str, base);
+
+        nextLexeme();
+
+        if (result == ConstantNumberParseResult::Malformed)
+            return reportExprError(start, {}, "Malformed integer");
+
+        if (result != ConstantNumberParseResult::Ok)
+            return reportExprError(start, {}, "Signed integer overflow");
+
+        AstExprConstantSignedInteger* node = allocator.alloc<AstExprConstantSignedInteger>(start, value, result);
+        if (options.storeCstData)
+            cstNodeMap[node] = allocator.alloc<CstExprConstantSignedInteger>(sourceData);
+        return node;
+    }
+    else if (FFlag::LuauParseI64U64 && scratchData.find("u64") == scratchData.size() - 3)
+    {
+        uint64_t value = 0;
+        ConstantNumberParseResult result = parseUnsignedInteger64(value, str, base);
+
+        nextLexeme();
+
+        if (result == ConstantNumberParseResult::Malformed)
+            return reportExprError(start, {}, "Malformed integer");
+
+        if (result != ConstantNumberParseResult::Ok)
+            return reportExprError(start, {}, "Unsigned integer overflow");
+
+        AstExprConstantUnsignedInteger* node = allocator.alloc<AstExprConstantUnsignedInteger>(start, value, result);
+        if (options.storeCstData)
+            cstNodeMap[node] = allocator.alloc<CstExprConstantUnsignedInteger>(sourceData);
         return node;
     }
     else

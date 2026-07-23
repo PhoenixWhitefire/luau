@@ -543,6 +543,41 @@ struct Printer
                 }
             }
         }
+        else if (const auto& a = expr.as<AstExprConstantSignedInteger>())
+        {
+            if (const auto cstNode = lookupCstNode<CstExprConstantSignedInteger>(a))
+            {
+                writer.literal(std::string_view(cstNode->value.data, cstNode->value.size));
+            }
+            else
+            {
+                if (a->value >= 0)
+                {
+                    char buffer[100];
+                    size_t len = snprintf(buffer, sizeof(buffer), "%lldi64", (long long)a->value);
+                    writer.literal(std::string_view{buffer, len});
+                }
+                else
+                {
+                    char buffer[100];
+                    size_t len = snprintf(buffer, sizeof(buffer), "0x%llxi64", (unsigned long long)a->value);
+                    writer.literal(std::string_view{buffer, len});
+                }
+            }
+        }
+        else if (const auto& a = expr.as<AstExprConstantUnsignedInteger>())
+        {
+            if (const auto cstNode = lookupCstNode<CstExprConstantUnsignedInteger>(a))
+            {
+                writer.literal(std::string_view(cstNode->value.data, cstNode->value.size));
+            }
+            else
+            {
+                char buffer[100];
+                size_t len = snprintf(buffer, sizeof(buffer), "%lluu64", (unsigned long long)a->value);
+                writer.literal(std::string_view{buffer, len});
+            }
+        }
         else if (const auto& a = expr.as<AstExprConstantString>())
         {
             if (const auto cstNode = lookupCstNode<CstExprConstantString>(a))

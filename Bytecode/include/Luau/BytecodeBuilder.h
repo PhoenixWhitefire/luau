@@ -67,6 +67,8 @@ public:
     int32_t addConstantBoolean(bool value);
     int32_t addConstantNumber(double value);
     int32_t addConstantInteger(int64_t value);
+    int32_t addConstantSignedInteger(int64_t value);
+    int32_t addConstantUnsignedInteger(uint64_t value);
     int32_t addConstantVector(float x, float y, float z, float w);
     int32_t addConstantString(StringRef value);
     int32_t addImport(uint32_t iid);
@@ -187,6 +189,8 @@ protected:
             Type_Boolean,
             Type_Number,
             Type_Integer,
+            Type_SignedInteger,
+            Type_UnsignedInteger,
             Type_Vector,
             Type_String,
             Type_Import,
@@ -201,6 +205,8 @@ protected:
             bool valueBoolean;
             double valueNumber;
             int64_t valueInteger64;
+            int64_t valueSignedInteger64;
+            uint64_t valueUnsignedInteger64;
             float valueVector[4];
             unsigned int valueString; // index into string table
             uint32_t valueImport;     // 10-10-10-2 encoded import id

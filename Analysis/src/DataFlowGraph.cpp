@@ -945,6 +945,10 @@ DataFlowResult DataFlowGraphBuilder::visitExpr(AstExpr* e)
             return {defArena->freshCell(Symbol{}, c->location), nullptr}; // ok
         else if (auto c = e->as<AstExprConstantInteger>())
             return {defArena->freshCell(Symbol{}, c->location), nullptr}; // ok
+        else if (auto c = e->as<AstExprConstantSignedInteger>())
+            return {defArena->freshCell(Symbol{}, c->location), nullptr}; // ok
+        else if (auto c = e->as<AstExprConstantUnsignedInteger>())
+            return {defArena->freshCell(Symbol{}, c->location), nullptr}; // ok
         else if (auto c = e->as<AstExprConstantString>())
             return {defArena->freshCell(Symbol{}, c->location), nullptr}; // ok
         else if (auto l = e->as<AstExprLocal>())

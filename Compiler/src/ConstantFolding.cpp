@@ -662,6 +662,16 @@ struct ConstantVisitor : AstVisitor
             result.type = Constant::Type_Integer;
             result.valueInteger64 = expr->value;
         }
+        else if (AstExprConstantSignedInteger* expr = node->as<AstExprConstantSignedInteger>())
+        {
+            result.type = Constant::Type_SignedInteger;
+            result.valueSignedInteger64 = expr->value;
+        }
+        else if (AstExprConstantUnsignedInteger* expr = node->as<AstExprConstantUnsignedInteger>())
+        {
+            result.type = Constant::Type_UnsignedInteger;
+            result.valueUnsignedInteger64 = expr->value;
+        }
         else if (AstExprConstantString* expr = node->as<AstExprConstantString>())
         {
             result.type = Constant::Type_String;

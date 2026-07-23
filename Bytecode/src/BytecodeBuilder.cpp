@@ -364,6 +364,30 @@ int32_t BytecodeBuilder::addConstantInteger(int64_t value)
     return addConstant(k, c);
 }
 
+int32_t BytecodeBuilder::addConstantSignedInteger(int64_t value)
+{
+    Constant c = {Constant::Type_SignedInteger};
+    c.valueSignedInteger64 = value;
+
+    ConstantKey k = {Constant::Type_SignedInteger};
+    static_assert(sizeof(k.value) == sizeof(value), "Expecting signed integer to be 64-bit");
+    memcpy(&k.value, &value, sizeof(value));
+
+    return addConstant(k, c);
+}
+
+int32_t BytecodeBuilder::addConstantUnsignedInteger(uint64_t value)
+{
+    Constant c = {Constant::Type_UnsignedInteger};
+    c.valueUnsignedInteger64 = value;
+
+    ConstantKey k = {Constant::Type_UnsignedInteger};
+    static_assert(sizeof(k.value) == sizeof(value), "Expecting unsigned integer to be 64-bit");
+    memcpy(&k.value, &value, sizeof(value));
+
+    return addConstant(k, c);
+}
+
 int32_t BytecodeBuilder::addConstantVector(float x, float y, float z, float w)
 {
     Constant c = {Constant::Type_Vector};
@@ -839,6 +863,25 @@ void BytecodeBuilder::writeFunction(std::string& ss, uint32_t id, uint8_t flags,
                 writeByte(ss, 0);
                 writeVarInt(ss, c.valueInteger64);
             }
+            break;
+
+        case Constant::Type_SignedInteger:
+            writeByte(ss, LBC_CONSTANT_SIGNEDINTEGER);
+            if (c.valueSignedInteger64 < 0)
+            {
+                writeByte(ss, 1);
+                writeVarInt(ss, ~(uint64_t)c.valueSignedInteger64 + 1);
+            }
+            else
+            {
+                writeByte(ss, 0);
+                writeVarInt(ss, c.valueSignedInteger64);
+            }
+            break;
+
+        case Constant::Type_UnsignedInteger:
+            writeByte(ss, LBC_CONSTANT_UNSIGNEDINTEGER);
+            writeVarInt(ss, c.valueUnsignedInteger64);
             break;
 
         case Constant::Type_Vector:

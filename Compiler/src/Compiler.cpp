@@ -1813,6 +1813,14 @@ struct Compiler
             cid = bytecode.addConstantInteger(c->valueInteger64);
             break;
 
+        case Constant::Type_SignedInteger:
+            cid = bytecode.addConstantSignedInteger(c->valueSignedInteger64);
+            break;
+
+        case Constant::Type_UnsignedInteger:
+            cid = bytecode.addConstantUnsignedInteger(c->valueUnsignedInteger64);
+            break;
+
         case Constant::Type_Vector:
             cid = bytecode.addConstantVector(c->valueVector[0], c->valueVector[1], c->valueVector[2], c->valueVector[3]);
             break;
@@ -2792,6 +2800,31 @@ struct Compiler
         }
         break;
 
+        case Constant::Type_SignedInteger:
+        {
+            int64_t l = cv->valueSignedInteger64;
+
+            int32_t cid = bytecode.addConstantSignedInteger(l);
+            if (cid < 0)
+                CompileError::raise(node->location, "Exceeded constant limit; simplify the code to compile");
+
+            emitLoadK(target, cid);
+        }
+        break;
+
+        case Constant::Type_UnsignedInteger:
+        {
+            uint64_t l = cv->valueUnsignedInteger64;
+
+            int32_t cid = bytecode.addConstantUnsignedInteger(l);
+            if (cid < 0)
+                CompileError::raise(node->location, "Exceeded constant limit; simplify the code to compile");
+
+            emitLoadK(target, cid);
+        }
+        break;
+
+
         case Constant::Type_Vector:
         {
             int32_t cid = bytecode.addConstantVector(cv->valueVector[0], cv->valueVector[1], cv->valueVector[2], cv->valueVector[3]);
@@ -2856,6 +2889,22 @@ struct Compiler
         else if (AstExprConstantInteger* expr = node->as<AstExprConstantInteger>())
         {
             int32_t cid = bytecode.addConstantInteger(expr->value);
+            if (cid < 0)
+                CompileError::raise(expr->location, "Exceeded constant limit; simplify the code to compile");
+
+            emitLoadK(target, cid);
+        }
+        else if (AstExprConstantSignedInteger* expr = node->as<AstExprConstantSignedInteger>())
+        {
+            int32_t cid = bytecode.addConstantSignedInteger(expr->value);
+            if (cid < 0)
+                CompileError::raise(expr->location, "Exceeded constant limit; simplify the code to compile");
+
+            emitLoadK(target, cid);
+        }
+        else if (AstExprConstantUnsignedInteger* expr = node->as<AstExprConstantUnsignedInteger>())
+        {
+            int32_t cid = bytecode.addConstantUnsignedInteger(expr->value);
             if (cid < 0)
                 CompileError::raise(expr->location, "Exceeded constant limit; simplify the code to compile");
 

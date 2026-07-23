@@ -325,6 +325,30 @@ struct AstJsonEncoder : public AstVisitor
         );
     }
 
+    void write(class AstExprConstantSignedInteger* node)
+    {
+        writeNode(
+            node,
+            "AstExprConstantSignedInteger",
+            [&]()
+            {
+                write("value", node->value);
+            }
+        );
+    }
+
+    void write(class AstExprConstantUnsignedInteger* node)
+    {
+        writeNode(
+            node,
+            "AstExprConstantUnsignedInteger",
+            [&]()
+            {
+                write("value", node->value);
+            }
+        );
+    }
+
     void write(class AstExprConstantString* node)
     {
         writeNode(
@@ -1236,6 +1260,18 @@ struct AstJsonEncoder : public AstVisitor
     }
 
     bool visit(class AstExprConstantInteger* node) override
+    {
+        write(node);
+        return false;
+    }
+
+    bool visit(class AstExprConstantSignedInteger* node) override
+    {
+        write(node);
+        return false;
+    }
+
+    bool visit(class AstExprConstantUnsignedInteger* node) override
     {
         write(node);
         return false;

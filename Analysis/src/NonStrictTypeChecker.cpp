@@ -550,6 +550,10 @@ struct NonStrictTypeChecker
             return visit(e);
         else if (auto e = expr->as<AstExprConstantInteger>())
             return visit(e);
+        else if (auto e = expr->as<AstExprConstantSignedInteger>())
+            return visit(e);
+        else if (auto e = expr->as<AstExprConstantUnsignedInteger>())
+            return visit(e);
         else if (auto e = expr->as<AstExprConstantString>())
             return visit(e);
         else if (auto e = expr->as<AstExprLocal>())
@@ -610,6 +614,16 @@ struct NonStrictTypeChecker
     }
 
     NonStrictContext visit(AstExprConstantInteger* expr)
+    {
+        return {};
+    }
+
+    NonStrictContext visit(AstExprConstantSignedInteger* expr)
+    {
+        return {};
+    }
+
+    NonStrictContext visit(AstExprConstantUnsignedInteger* expr)
     {
         return {};
     }

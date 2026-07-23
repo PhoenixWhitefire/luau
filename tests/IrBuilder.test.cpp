@@ -121,12 +121,14 @@ public:
     static const int tboolean = 1;
     static const int tnumber = 3;
     static const int tinteger = 4;
-    static const int tvector = 5;
-    static const int tstring = 6;
-    static const int ttable = 7;
-    static const int tfunction = 8;
-    static const int tuserdata = 9;
-    static const int tbuffer = 11;
+    static const int tint64 = 5;
+    static const int tuint64 = 6;
+    static const int tvector = 7;
+    static const int tstring = 8;
+    static const int ttable = 9;
+    static const int tfunction = 10;
+    static const int tuserdata = 11;
+    static const int tbuffer = 13;
 };
 
 TEST_SUITE_BEGIN("Optimization");

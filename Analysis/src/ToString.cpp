@@ -617,6 +617,12 @@ struct TypeStringifier
                 return;
             }
             [[fallthrough]];
+        case PrimitiveType::SignedInteger:
+            state.emit("int64");
+            return;
+        case PrimitiveType::UnsignedInteger:
+            state.emit("uint64");
+            return;
         default:
             LUAU_ASSERT(!"Unknown primitive type");
             throw InternalCompilerError("Unknown primitive type " + std::to_string(ptv.type));

@@ -618,6 +618,21 @@ static int loadsafe(
                 break;
             }
 
+            case LBC_CONSTANT_SIGNEDINTEGER:
+            {
+                bool isNegative = read<uint8_t>(data, size, offset);
+                uint64_t magnitude = readVarInt64(data, size, offset);
+                seti64value(&p->k[j], isNegative ? (int64_t)(~magnitude + 1) : (int64_t)magnitude);
+                break;
+            }
+
+            case LBC_CONSTANT_UNSIGNEDINTEGER:
+            {
+                uint64_t magnitude = readVarInt64(data, size, offset);
+                setu64value(&p->k[j], magnitude);
+                break;
+            }
+
             default:
                 LUAU_ASSERT(!"Unexpected constant kind");
             }

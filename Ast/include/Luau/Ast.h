@@ -372,6 +372,33 @@ public:
     int64_t value;
     ConstantNumberParseResult parseResult;
 };
+
+class AstExprConstantSignedInteger : public AstExpr
+{
+public:
+    LUAU_RTTI(AstExprConstantSignedInteger)
+
+    AstExprConstantSignedInteger(const Location& location, int64_t value, ConstantNumberParseResult parseResult = ConstantNumberParseResult::Ok);
+
+    void visit(AstVisitor* visitor) override;
+
+    int64_t value;
+    ConstantNumberParseResult parseResult;
+};
+
+class AstExprConstantUnsignedInteger : public AstExpr
+{
+public:
+    LUAU_RTTI(AstExprConstantUnsignedInteger)
+
+    AstExprConstantUnsignedInteger(const Location& location, uint64_t value, ConstantNumberParseResult parseResult = ConstantNumberParseResult::Ok);
+
+    void visit(AstVisitor* visitor) override;
+
+    uint64_t value;
+    ConstantNumberParseResult parseResult;
+};
+
 class AstExprConstantString : public AstExpr
 {
 public:
@@ -1479,6 +1506,14 @@ public:
         return visit(static_cast<AstExpr*>(node));
     }
     virtual bool visit(class AstExprConstantInteger* node)
+    {
+        return visit(static_cast<AstExpr*>(node));
+    }
+    virtual bool visit(class AstExprConstantSignedInteger* node)
+    {
+        return visit(static_cast<AstExpr*>(node));
+    }
+    virtual bool visit(class AstExprConstantUnsignedInteger* node)
     {
         return visit(static_cast<AstExpr*>(node));
     }

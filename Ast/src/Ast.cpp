@@ -183,6 +183,30 @@ void AstExprConstantInteger::visit(AstVisitor* visitor)
     visitor->visit(this);
 }
 
+AstExprConstantSignedInteger::AstExprConstantSignedInteger(const Location& location, int64_t value, ConstantNumberParseResult parseResult)
+    : AstExpr(ClassIndex(), location)
+    , value(value)
+    , parseResult(parseResult)
+{
+}
+
+void AstExprConstantSignedInteger::visit(AstVisitor* visitor)
+{
+    visitor->visit(this);
+}
+
+AstExprConstantUnsignedInteger::AstExprConstantUnsignedInteger(const Location& location, uint64_t value, ConstantNumberParseResult parseResult)
+    : AstExpr(ClassIndex(), location)
+    , value(value)
+    , parseResult(parseResult)
+{
+}
+
+void AstExprConstantUnsignedInteger::visit(AstVisitor* visitor)
+{
+    visitor->visit(this);
+}
+
 AstExprConstantString::AstExprConstantString(const Location& location, const AstArray<char>& value, QuoteStyle quoteStyle)
     : AstExpr(ClassIndex(), location)
     , value(value)

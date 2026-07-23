@@ -114,6 +114,26 @@ public:
     AstArray<char> value;
 };
 
+class CstExprConstantSignedInteger : public CstNode
+{
+public:
+    LUAU_CST_RTTI(CstExprConstantSignedInteger)
+
+    explicit CstExprConstantSignedInteger(const AstArray<char>& value);
+
+    AstArray<char> value;
+};
+
+class CstExprConstantUnsignedInteger : public CstNode
+{
+public:
+    LUAU_CST_RTTI(CstExprConstantUnsignedInteger)
+
+    explicit CstExprConstantUnsignedInteger(const AstArray<char>& value);
+
+    AstArray<char> value;
+};
+
 class CstExprConstantString : public CstNode
 {
 public:

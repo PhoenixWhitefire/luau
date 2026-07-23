@@ -2925,6 +2925,10 @@ Inference ConstraintGenerator::check(const ScopePtr& scope, AstExpr* expr, std::
         result = Inference{builtinTypes->numberType};
     else if (expr->is<AstExprConstantInteger>())
         result = Inference{builtinTypes->integerType};
+    else if (expr->is<AstExprConstantSignedInteger>())
+        result = Inference{builtinTypes->signedIntegerType};
+    else if (expr->is<AstExprConstantUnsignedInteger>())
+        result = Inference{builtinTypes->unsignedIntegerType};
     else if (auto boolExpr = expr->as<AstExprConstantBool>())
         result = check(scope, boolExpr, expectedType, forceSingleton);
     else if (expr->is<AstExprConstantNil>())
