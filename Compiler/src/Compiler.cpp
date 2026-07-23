@@ -1622,7 +1622,7 @@ struct Compiler
         checkConstant(classConst, decl->location);
         bytecode.patchAux(auxOffset, classConst);
 
-        if (FFlag::LuauExportedClassIsNilWorkaround)
+        if (FFlag::LuauExportedClassIsNilWorkaround && decl->exported)
         {
             // ERIN: Temporary workaround for bug where exported class is `nil` within the class scope (methods etc)
             // We assign it to the export table immediately after the declaration, whereas normally that would only
