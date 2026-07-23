@@ -411,6 +411,8 @@ target_sources(Luau.VM PRIVATE
     VM/src/lutf8lib.cpp
     VM/src/lveclib.cpp
     VM/src/lintlib.cpp
+    VM/src/li64lib.cpp
+    VM/src/lu64lib.cpp
     VM/src/lvmexecute.cpp
     VM/src/lclass.cpp
     VM/src/lclasslib.cpp
