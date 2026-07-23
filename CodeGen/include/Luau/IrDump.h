@@ -18,6 +18,8 @@ struct CfgInfo;
 
 const char* getCmdName(IrCmd cmd);
 const char* getBlockKindName(IrBlockKind kind);
+const char* getValueKindName(IrValueKind kind);
+const char* getConversionCmdSuffix(IrCmd conversionCmd);
 
 struct IrToStringContext
 {
@@ -25,6 +27,7 @@ struct IrToStringContext
     const std::vector<IrBlock>& blocks;
     const std::vector<IrConst>& constants;
     const CfgInfo& cfg;
+    const DenseHashMap<uint32_t, VmExitSyncInfo>& vmExitInfo;
     Proto* proto = nullptr;
 };
 

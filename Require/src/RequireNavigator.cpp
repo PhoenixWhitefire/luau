@@ -5,12 +5,16 @@
 #include "AliasCycleTracker.h"
 #include "PathUtilities.h"
 
+#include "Luau/Common.h"
 #include "Luau/Config.h"
 #include "Luau/LuauConfig.h"
 
 #include <algorithm>
 #include <optional>
 #include <utility>
+
+LUAU_DYNAMIC_FASTFLAGVARIABLE(LuauRequireAliasOverrideOrderFix, false)
+LUAU_FASTFLAGVARIABLE(LuauRequireResolveAliasNullCheck)
 
 namespace Luau::Require
 {
@@ -71,6 +75,12 @@ Error Navigator::navigateImpl(std::string_view path)
             }
         );
 
+        if (DFFlag::LuauRequireAliasOverrideOrderFix)
+        {
+            if (Error error = resetToRequirer())
+                return error;
+        }
+
         if (auto [error, wasOverridden] = toAliasOverride(alias); error)
         {
             return error;
@@ -83,8 +93,11 @@ Error Navigator::navigateImpl(std::string_view path)
             return std::nullopt;
         }
 
-        if (Error error = resetToRequirer())
-            return error;
+        if (!DFFlag::LuauRequireAliasOverrideOrderFix)
+        {
+            if (Error error = resetToRequirer())
+                return error;
+        }
 
         Config config;
         if (Error error = navigateToAndPopulateConfig(alias, config))
@@ -260,7 +273,17 @@ Error Navigator::navigateToAndPopulateConfig(const std::string& desiredAlias, Co
         {
             if (navigationContext.getConfigBehavior() == NavigationContext::ConfigBehavior::GetAlias)
             {
-                config.setAlias(desiredAlias, *navigationContext.getAlias(desiredAlias), /* configLocation = */ "unused");
+                if (FFlag::LuauRequireResolveAliasNullCheck)
+                {
+                    std::optional<std::string> aliasPath = navigationContext.getAlias(desiredAlias);
+                    if (!aliasPath)
+                        return "could not resolve alias \"" + desiredAlias + "\"";
+                    config.setAlias(desiredAlias, *aliasPath);
+                }
+                else
+                {
+                    config.setAlias(desiredAlias, *navigationContext.getAlias(desiredAlias));
+                }
                 break;
             }
 
@@ -270,7 +293,6 @@ Error Navigator::navigateToAndPopulateConfig(const std::string& desiredAlias, Co
 
             Luau::ConfigOptions opts;
             Luau::ConfigOptions::AliasOptions aliasOpts;
-            aliasOpts.configLocation = "unused";
             aliasOpts.overwriteAliases = false;
             opts.aliasOptions = std::move(aliasOpts);
 
