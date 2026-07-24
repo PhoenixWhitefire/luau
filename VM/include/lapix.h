@@ -1,5 +1,6 @@
 // This file is part of the Luau programming language and is licensed under MIT License; see LICENSE.txt for details
 #pragma once
+#include "lua.h"
 
 LUA_API const void* lua_getmetatablepointer(lua_State* L, int objindex);
 LUA_API const char* lua_gcstatename(int state);
