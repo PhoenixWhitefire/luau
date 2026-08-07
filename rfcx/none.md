@@ -85,16 +85,17 @@ Unlike `nil`, storing `none` in a table preserves the key-value pair:
 The C API is expanded with the following definitions and functions:
 
 ```c
-#define LUA_TNONESYM 6
+#define LUA_TNONE 6
 
-LUA_API int lua_isnonesym(lua_State* L, int idx);
-LUA_API void lua_pushnonesym(lua_State* L);
+LUA_API int lua_isnone(lua_State* L, int idx);
+LUA_API void lua_pushnone(lua_State* L);
 ```
 
-- `lua_type(L, idx)` returns `LUA_TNONESYM` for `none` values.
-- `lua_typename(L, LUA_TNONESYM)` returns `"none"`.
-- `lua_toboolean(L, idx)` returns `0` when the value at `idx` has type `LUA_TNONESYM`.
-- `lua_isnonesym(L, idx)` returns `1` if the value at `idx` is `LUA_TNONESYM`, and `0` otherwise.
+- `lua_type(L, idx)` returns `LUA_TNONE` for `none` values.
+- `lua_typename(L, LUA_TNONE)` returns `"none"`.
+- `lua_toboolean(L, idx)` returns `0` when the value at `idx` has type `LUA_TNONE`.
+- `lua_isnone(L, idx)` returns `1` if the value at `idx` is `LUA_TNONE`, and `0` otherwise.
+*(Note: To accommodate `LUA_TNONE` as tag 6, the API constant for an invalid/out-of-bounds stack index `-1` is defined as `LUA_TNOVAL`).*
 
 ### Standard Library
 

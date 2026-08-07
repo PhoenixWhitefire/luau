@@ -1302,9 +1302,9 @@ static int luauF_tostring(lua_State* L, StkId res, TValue* arg0, int nresults, S
             setsvalue(L, res, s);
             return 1;
         }
-        case LUA_TNONESYM:
+        case LUA_TNONE:
         {
-            TString* s = L->global->ttname[LUA_TNONESYM];
+            TString* s = L->global->ttname[LUA_TNONE];
             setsvalue(L, res, s);
             return 1;
         }
