@@ -2930,7 +2930,7 @@ TEST_CASE("ApiType")
     CHECK(lua_type(L, 1) == LUA_TNUMBER);
 
     CHECK(strcmp(luaL_typename(L, 2), "no value") == 0);
-    CHECK(lua_type(L, 2) == LUA_TNOVAL);
+    CHECK(lua_type(L, 2) == LUA_TNONE);
     CHECK(strcmp(lua_typename(L, lua_type(L, 2)), "no value") == 0);
 
     lua_newuserdata(L, 0);

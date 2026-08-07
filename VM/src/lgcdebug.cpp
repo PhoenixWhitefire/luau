@@ -936,7 +936,7 @@ static void enumproto(EnumContext* ctx, Proto* p)
     {
         size_t nativesize = ctx->L->global->ecb.getmemorysize(ctx->L, p);
 
-        ctx->node(ctx->context, p->execdata, uint8_t(LUA_TNONE), p->memcat, nativesize, NULL);
+        ctx->node(ctx->context, p->execdata, uint8_t(LUA_TNONESYM), p->memcat, nativesize, NULL);
         ctx->edge(ctx->context, enumtopointer(obj2gco(p)), p->execdata, "[native]");
     }
 
