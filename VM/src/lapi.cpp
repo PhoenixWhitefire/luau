@@ -689,11 +689,11 @@ void lua_pushnil(lua_State* L)
     api_incr_top(L);
 }
 
-void lua_pushnonesym(lua_State* L)
+void lua_pushsymnone(lua_State* L)
 {
     LUAU_ASSERT(FFlag::LuauNonePrimitive);
     ensure_stack(L, 1);
-    setnonesymvalue(L->top);
+    setsymnonevalue(L->top);
     api_incr_top(L);
 }
 

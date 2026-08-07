@@ -605,7 +605,7 @@ void luaL_addvalueany(luaL_Strbuf* B, int idx)
     case LUA_TNIL:
         luaL_addstring(B, "nil");
         break;
-    case LUA_TNONESYM:
+    case LUA_TSYMNONE:
         luaL_addstring(B, "none");
         break;
     case LUA_TBOOLEAN:
@@ -696,7 +696,7 @@ const char* luaL_tolstring(lua_State* L, int idx, size_t* len)
     case LUA_TNIL:
         lua_pushliteral(L, "nil");
         break;
-    case LUA_TNONESYM:
+    case LUA_TSYMNONE:
         lua_pushliteral(L, "none");
         break;
     case LUA_TBOOLEAN:

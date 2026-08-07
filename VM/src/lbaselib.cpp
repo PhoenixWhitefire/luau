@@ -505,7 +505,7 @@ int luaopen_base(lua_State* L)
 
     if (FFlag::LuauNonePrimitive)
     {
-        lua_pushnonesym(L);
+        lua_pushsymnone(L);
         lua_setglobal(L, "none");
     }
 
