@@ -224,7 +224,7 @@ static uint8_t getBytecodeConstantTag(Proto* proto, unsigned ki)
     case LUA_TVECTOR:
         return LBC_TYPE_VECTOR;
     case LUA_TNONESYM:
-        return LBC_TYPE_NONE;
+        return LBC_TYPE_NONESYM;
     case LUA_TSTRING:
         return LBC_TYPE_STRING;
     case LUA_TTABLE:

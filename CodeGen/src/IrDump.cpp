@@ -812,7 +812,7 @@ const char* getBytecodeTypeName(uint8_t type, const char* const* userdataTypes)
         return "vector";
     case LBC_TYPE_BUFFER:
         return "buffer";
-    case LBC_TYPE_NONE:
+    case LBC_TYPE_NONESYM:
         return "none";
     case LBC_TYPE_ANY:
         return "any";

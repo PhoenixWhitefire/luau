@@ -105,7 +105,7 @@ static void buildArgumentTypeChecks(IrBuilder& build, IrOp entry)
         case LBC_TYPE_BUFFER:
             build.inst(IrCmd::CHECK_TAG, load, build.constTag(LUA_TBUFFER), build.vmExit(kVmExitEntryGuardPc));
             break;
-        case LBC_TYPE_NONE:
+        case LBC_TYPE_NONESYM:
             build.inst(IrCmd::CHECK_TAG, load, build.constTag(LUA_TNONESYM), build.vmExit(kVmExitEntryGuardPc));
             break;
         default:
