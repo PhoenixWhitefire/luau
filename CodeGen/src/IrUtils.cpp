@@ -1939,7 +1939,7 @@ std::optional<uint8_t> tryGetLuauTagForBcType(uint8_t bcType, bool ignoreOptiona
     case LBC_TYPE_BUFFER:
         return LUA_TBUFFER;
     case LBC_TYPE_NONE:
-        return LUA_TNONE;
+        return LUA_TNONESYM;
     default:
         if (bcType >= LBC_TYPE_TAGGED_USERDATA_BASE && bcType < LBC_TYPE_TAGGED_USERDATA_END)
             return LUA_TUSERDATA;
