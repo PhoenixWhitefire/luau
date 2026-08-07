@@ -22,6 +22,8 @@ LUAU_FASTFLAG(LuauNonePrimitive)
 LUAU_FASTFLAGVARIABLE(LuauAutoStack)
 LUAU_FASTFLAGVARIABLE(LuauCloneTableFix)
 LUAU_FASTFLAGVARIABLE(LuauExternallyManagedBuffers)
+LUAU_FASTFLAGVARIABLE(LuauExternalString)
+LUAU_FASTFLAGVARIABLE(DebugLuauAllowNonNullTerminatedStrings)
 
 /*
  * This file contains most implementations of core Lua APIs from lua.h.
@@ -1563,6 +1565,38 @@ void* lua_getbufferuserdata(lua_State* L, int idx)
 {
     StkId p = index2addr(L, idx);
     return ttisbuffer(p) ? bufvalue(p)->userdata : nullptr;
+}
+
+const char* lua_pushexternalstring(lua_State* L, const char* data, size_t len, void* userdata, lua_StringFree free_cb)
+{
+    LUAU_ASSERT(FFlag::LuauExternalString);
+    if (!FFlag::DebugLuauAllowNonNullTerminatedStrings)
+        api_check(L, data[len] == '\0');
+    luaC_checkGC(L);
+    luaC_threadbarrier(L);
+    ensure_stack(L, 1);
+    TString* ts = luaS_newexternallstr(L, data, len, userdata, free_cb);
+    setsvalue(L, L->top, ts);
+    api_incr_top(L);
+    return getstr(ts);
+}
+
+int lua_isstringexternal(lua_State* L, int idx)
+{
+    LUAU_ASSERT(FFlag::LuauExternalString);
+    StkId p = index2addr(L, idx);
+    return ttisstring(p) ? (!tsisinline(tsvalue(p))) : 0;
+}
+
+void* lua_getstringexternaluserdata(lua_State* L, int idx)
+{
+    LUAU_ASSERT(FFlag::LuauExternalString);
+    StkId p = index2addr(L, idx);
+    if (ttisstring(p) && !tsisinline(tsvalue(p)))
+    {
+        return tsvalue(p)->ext.userdata;
+    }
+    return nullptr;
 }
 
 static const char* aux_upvalue(StkId fi, int n, TValue** val)

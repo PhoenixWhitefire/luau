@@ -275,19 +275,31 @@ typedef struct TString
     // 1 byte padding
 
     int16_t atom;
+    uint8_t is_external;
 
-    // 2 byte padding
+    // 1 byte padding
 
     TString* next; // next string in the hash table bucket
 
     unsigned int hash;
     unsigned int len;
 
-    char data[1]; // string data is allocated right after the header
+    union
+    {
+        char data[1]; // string data is allocated right after the header
+        struct
+        {
+            char* dataptr; // points to external memory
+            lua_StringFree free_cb;
+            void* userdata;
+        } ext;
+    };
 } TString;
 
+#define getstr(ts) ((ts)->is_external ? (ts)->ext.dataptr : (ts)->data)
+#define tsisinline(ts) (!((ts)->is_external))
+#define getexternalmeta(ts) (&(ts)->ext)
 
-#define getstr(ts) (ts)->data
 #define svalue(o) getstr(tsvalue(o))
 
 typedef struct Udata
