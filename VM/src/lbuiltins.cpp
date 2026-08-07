@@ -790,6 +790,8 @@ static int luauF_type(lua_State* L, StkId res, TValue* arg0, int nresults, StkId
     if (nparams >= 1 && nresults <= 1)
     {
         int tt = ttype(arg0);
+        if (tt == LUA_TNONESYM)
+            return -1;
         TString* ttname = L->global->ttname[tt];
 
         setsvalue(L, res, ttname);
