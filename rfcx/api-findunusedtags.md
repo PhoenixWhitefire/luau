@@ -3,7 +3,7 @@
 Status: Implemented
 
 ## Summary
-Implement functions for finding unused userdata and light userdata tags to reduce bookkeeping on the host's side.
+Implement functions for finding unused userdata and light userdata tags.
 
 ## Motivation
 It is currently not possible for embedders to know what tags are available for use through just the existing public C API.
