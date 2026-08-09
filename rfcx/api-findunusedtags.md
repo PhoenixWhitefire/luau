@@ -21,6 +21,6 @@ then it will return `-1`.
 
 ### `int lua_findunusedlightuserdatatag(lua_State* L)`
 
-This fucntion will find and return a light userdata tag that has not been associated with a name.
+This function will find and return a light userdata tag that has not been associated with a name.
 If it cannot find any available tags (tags are restricted to the range `[0..LUA_LUTAG_LIMIT]`),
 then it will return `-1`.
