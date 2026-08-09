@@ -2,6 +2,7 @@
 #include "Luau/Common.h"
 #include "Luau/Type.h"
 #include "lua.h"
+#include "lapix.h"
 #include "lualib.h"
 #include "luacode.h"
 #include "luacodegen.h"
@@ -66,11 +67,15 @@ LUAU_FASTFLAG(LuauCodegenFixBufferLenCheck)
 LUAU_FASTFLAG(LuauYieldIter2)
 LUAU_FASTFLAG(LuauCustomYieldablePcalls)
 LUAU_FASTFLAG(DebugLuauUserDefinedClassesRuntime)
+LUAU_FASTFLAG(LuauExportValueSyntax)
+LUAU_FASTFLAG(LuauExportedClassIsNilWorkaround)
 LUAU_FASTFLAG(LuauAutoStack)
 LUAU_FASTFLAG(LuauUdataMetatablePinned)
 LUAU_DYNAMIC_FASTFLAG(LuauGcTableStepFix)
 LUAU_FASTFLAG(LuauCodegenFixTwoResA64Builtin)
 LUAU_FASTFLAG(LuauMathRoundNegZero)
+LUAU_FASTFLAG(LuauDefaultArguments)
+LUAU_FASTFLAG(LuauNonePrimitive)
 
 #ifndef LUAU_CONFORMANCE_SOURCE_DIR
 // Walks up from the current directory looking for the Client folder,
@@ -1908,6 +1913,10 @@ static void populateRTTI(lua_State* L, Luau::TypeId type)
             lua_pushstring(L, "buffer");
             break;
 
+        case Luau::PrimitiveType::NoneType:
+            lua_pushstring(L, "none");
+            break;
+
         default:
             LUAU_ASSERT(!"Unknown primitive type");
         }
@@ -1954,6 +1963,7 @@ static void populateRTTI(lua_State* L, Luau::TypeId type)
 TEST_CASE("Types")
 {
     ScopedFastFlag integerType{FFlag::LuauIntegerType2, true};
+    ScopedFastFlag nonePrimitive{FFlag::LuauNonePrimitive, true};
 
     runConformance(
         "types.luau",
@@ -2360,7 +2370,7 @@ TEST_CASE("Reference")
     lua_newuserdatadtor(
         L,
         0,
-        [](void*)
+        [](lua_State*, void* data)
         {
             dtorhits++;
         }
@@ -2368,7 +2378,7 @@ TEST_CASE("Reference")
     lua_newuserdatadtor(
         L,
         0,
-        [](void*)
+        [](lua_State*, void* data)
         {
             dtorhits++;
         }
@@ -2406,7 +2416,7 @@ TEST_CASE("NewUserdataOverflow")
         [](lua_State* L1)
         {
             // The following userdata request might cause an overflow.
-            lua_newuserdatadtor(L1, SIZE_MAX, [](void* d) {});
+            lua_newuserdatadtor(L1, SIZE_MAX, [](lua_State*, void* d) {});
             // The overflow might segfault in the following call.
             lua_getmetatable(L1, -1);
             return 0;
@@ -3543,7 +3553,7 @@ TEST_CASE("UserdataApi")
     void* ud3 = lua_newuserdatadtor(
         L,
         4,
-        [](void* data)
+        [](lua_State*, void* data)
         {
             dtorhits += *(int*)data;
         }
@@ -3552,7 +3562,7 @@ TEST_CASE("UserdataApi")
     void* ud4 = lua_newuserdatadtor(
         L,
         1,
-        [](void* data)
+        [](lua_State*, void* data)
         {
             dtorhits += *(char*)data;
         }
@@ -3632,7 +3642,7 @@ TEST_CASE("UserdataAlignment")
 
         for (int i = 0; i < 10; i++)
         {
-            void* data = lua_newuserdatadtor(L, size, [](void*) {});
+            void* data = lua_newuserdatadtor(L, size, [](lua_State*, void* data) {});
             LUAU_ASSERT(uintptr_t(data) % 16 == 0);
             lua_pop(L, 1);
         }
@@ -4235,6 +4245,18 @@ TEST_CASE("Classes")
     runConformance("classes.luau");
 }
 
+TEST_CASE("ExportedClasses")
+{
+    ScopedFastFlag sffs[] = {
+        {FFlag::DebugLuauUserDefinedClasses, true},
+        {FFlag::DebugLuauUserDefinedClassesRuntime, true},
+        {FFlag::LuauExportValueSyntax, true},
+        {FFlag::LuauExportedClassIsNilWorkaround, true},
+    };
+
+    runConformance("exportclasses.luau");
+}
+
 [[nodiscard]] static std::string makeHugeFunctionSource()
 {
     std::string source;
@@ -4758,6 +4780,33 @@ TEST_CASE("CodegenRandomizeFunctionalCorrectness")
     REQUIRE_MESSAGE(callResult == 0, lua_tostring(L, -1));
 
     CHECK(lua_tonumber(L, -1) == 42.0);
+}
+
+TEST_CASE("DefaultArguments")
+{
+    ScopedFastFlag sff{FFlag::LuauDefaultArguments, true};
+
+    runConformance("defaultarg.luau");
+}
+
+TEST_CASE("None")
+{
+    ScopedFastFlag sff{FFlag::LuauNonePrimitive, true};
+
+    runConformance("none.luau");
+}
+
+TEST_CASE("lua_findunuseduserdatatag")
+{
+    StateRef globalState(luaL_newstate(), lua_close);
+    lua_State* L = globalState.get();
+
+    lua_createtable(L, 0, 0);
+    lua_setuserdatametatable(L, 0);
+    lua_setuserdatadtor(L, 1, [](lua_State*, void*){});
+
+    int available = lua_findunuseduserdatatag(L);
+    CHECK_EQ(available, 2);
 }
 
 TEST_SUITE_END();
