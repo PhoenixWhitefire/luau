@@ -12,3 +12,6 @@ LUA_API int luau_getfflag(const char* name);
 // Finds a userdata tag for which neither a metatable nor destructor is associated.
 // Returns -1 if none were found.
 LUA_API int lua_findunuseduserdatatag(lua_State* L);
+// Finds a light userdata tag that has not been associated with a name.
+// Returns -1 if none were found.
+LUA_API int lua_findunusedlightuserdatatag(lua_State* L);
