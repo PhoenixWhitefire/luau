@@ -230,6 +230,10 @@ struct NormalizedType
     // This type is either never or buffer.
     TypeId buffers;
 
+    // The none part of the type.
+    // This type is either never or none.
+    TypeId nones;
+
     // The (meta)table part of the type.
     // Each element of this set is a (meta)table type, or the top `table` type.
     // An empty set denotes never.
@@ -277,6 +281,9 @@ struct NormalizedType
     /// Returns true if this type is `nil` or `nil | *error-type*`
     bool isNil() const;
 
+    /// Returns true if this type is `none` or `none | *error-type*`
+    bool isNone() const;
+
     // Helpers that improve readability of the above (they just say if the component is present)
     bool hasTops() const;
     bool hasBooleans() const;
@@ -288,6 +295,7 @@ struct NormalizedType
     bool hasStrings() const;
     bool hasThreads() const;
     bool hasBuffers() const;
+    bool hasNones() const;
     bool hasTables() const;
     bool hasFunctions() const;
     bool hasTyvars() const;

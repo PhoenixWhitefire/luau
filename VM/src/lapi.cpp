@@ -18,8 +18,12 @@
 #include <string.h>
 
 LUAU_FASTFLAG(LuauDirectFieldGet)
+LUAU_FASTFLAG(LuauNonePrimitive)
 LUAU_FASTFLAGVARIABLE(LuauAutoStack)
 LUAU_FASTFLAGVARIABLE(LuauCloneTableFix)
+LUAU_FASTFLAGVARIABLE(LuauExternallyManagedBuffers)
+LUAU_FASTFLAGVARIABLE(LuauExternalString)
+LUAU_FASTFLAGVARIABLE(DebugLuauAllowNonNullTerminatedStrings)
 
 /*
  * This file contains most implementations of core Lua APIs from lua.h.
@@ -346,8 +350,9 @@ int lua_type(lua_State* L, int idx)
 const char* lua_typename(lua_State* L, int t)
 {
     api_check(L, t >= LUA_TNONE && t < LUA_T_COUNT);
-
-    return (t == LUA_TNONE) ? "no value" : luaT_typenames[t];
+    if (t == LUA_TNONE)
+        return "no value";
+    return luaT_typenames[t];
 }
 
 int lua_iscfunction(lua_State* L, int idx)
@@ -681,6 +686,14 @@ void lua_pushnil(lua_State* L)
 {
     ensure_stack(L, 1);
     setnilvalue(L->top);
+    api_incr_top(L);
+}
+
+void lua_pushsymnone(lua_State* L)
+{
+    LUAU_ASSERT(FFlag::LuauNonePrimitive);
+    ensure_stack(L, 1);
+    setsymnonevalue(L->top);
     api_incr_top(L);
 }
 
@@ -1504,7 +1517,7 @@ void* lua_newuserdatataggedwithmetatable(lua_State* L, size_t sz, int tag)
     return u->data;
 }
 
-void* lua_newuserdatadtor(lua_State* L, size_t sz, void (*dtor)(void*))
+void* lua_newuserdatadtor(lua_State* L, size_t sz, lua_Destructor dtor)
 {
     api_check(L, dtor != nullptr);
     luaC_checkGC(L);
@@ -1528,6 +1541,63 @@ void* lua_newbuffer(lua_State* L, size_t sz)
     setbufvalue(L, L->top, b);
     api_incr_top(L);
     return b->data;
+}
+
+void* lua_newexternalbuffer(lua_State* L, size_t sz, void* data, void* userdata, lua_BufferFree free_cb, int mode)
+{
+    LUAU_ASSERT(FFlag::LuauExternallyManagedBuffers);
+    api_check(L, mode == 1 || mode == 2);
+    luaC_checkGC(L);
+    luaC_threadbarrier(L);
+    ensure_stack(L, 1);
+    Buffer* b = luaB_newexternalbuffer(L, sz, data, userdata, free_cb, mode);
+    setbufvalue(L, L->top, b);
+    api_incr_top(L);
+    return b->data;
+}
+
+int lua_getbuffermode(lua_State* L, int idx)
+{
+    StkId p = index2addr(L, idx);
+    return ttisbuffer(p) ? bufvalue(p)->mode : LUA_BLUAU;
+}
+
+void* lua_getbufferuserdata(lua_State* L, int idx)
+{
+    StkId p = index2addr(L, idx);
+    return ttisbuffer(p) ? bufvalue(p)->userdata : nullptr;
+}
+
+const char* lua_pushexternalstring(lua_State* L, const char* data, size_t len, void* userdata, lua_StringFree free_cb)
+{
+    LUAU_ASSERT(FFlag::LuauExternalString);
+    if (!FFlag::DebugLuauAllowNonNullTerminatedStrings)
+        api_check(L, data[len] == '\0');
+    luaC_checkGC(L);
+    luaC_threadbarrier(L);
+    ensure_stack(L, 1);
+    TString* ts = luaS_newexternallstr(L, data, len, userdata, free_cb);
+    setsvalue(L, L->top, ts);
+    api_incr_top(L);
+    return getstr(ts);
+}
+
+int lua_isstringexternal(lua_State* L, int idx)
+{
+    LUAU_ASSERT(FFlag::LuauExternalString);
+    StkId p = index2addr(L, idx);
+    return ttisstring(p) ? (!tsisinline(tsvalue(p))) : 0;
+}
+
+void* lua_getstringexternaluserdata(lua_State* L, int idx)
+{
+    LUAU_ASSERT(FFlag::LuauExternalString);
+    StkId p = index2addr(L, idx);
+    if (ttisstring(p) && !tsisinline(tsvalue(p)))
+    {
+        return tsvalue(p)->ext.userdata;
+    }
+    return nullptr;
 }
 
 static const char* aux_upvalue(StkId fi, int n, TValue** val)

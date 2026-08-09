@@ -1804,6 +1804,16 @@ void IrLoweringA64::lowerInst(IrInst& inst, uint32_t index, const IrBlock& next)
         build.ldr(inst.regA64, mem(regOp(OP_A(inst)), offsetof(TString, len)));
         break;
     }
+    case IrCmd::BUFFER_ISFROZEN:
+    {
+        inst.regA64 = regs.allocReg(KindA64::w, index);
+        RegisterA64 temp = regs.allocTemp(KindA64::w);
+
+        build.ldrb(temp, mem(regOp(OP_A(inst)), offsetof(Buffer, mode)));
+        build.cmp(temp, uint16_t(LUA_BHOST_IMMUTABLE));
+        build.cset(inst.regA64, ConditionA64::Equal);
+        break;
+    }
     case IrCmd::TABLE_SETNUM:
     {
         // note: we need to call regOp before spill so that we don't do redundant reloads
@@ -2490,6 +2500,16 @@ void IrLoweringA64::lowerInst(IrInst& inst, uint32_t index, const IrBlock& next)
         build.ldr(temp, mem(regOp(OP_A(inst)), offsetof(LuaNode, val.tt)));
         CODEGEN_ASSERT(LUA_TNIL == 0);
         build.cbz(temp, getTargetLabel(OP_B(inst), index, fresh));
+        finalizeTargetLabel(OP_B(inst), index, fresh);
+        break;
+    }
+    case IrCmd::CHECK_BUFFER_MUTABLE:
+    {
+        Label fresh;
+        RegisterA64 temp = regs.allocTemp(KindA64::w);
+        build.ldrb(temp, mem(regOp(OP_A(inst)), offsetof(Buffer, mode)));
+        build.cmp(temp, uint16_t(LUA_BHOST_IMMUTABLE));
+        build.b(ConditionA64::Equal, getTargetLabel(OP_B(inst), index, fresh));
         finalizeTargetLabel(OP_B(inst), index, fresh);
         break;
     }
@@ -4182,7 +4202,7 @@ AddressA64 IrLoweringA64::tempAddr(IrOp op, int offset, RegisterA64 tempStorage)
 AddressA64 IrLoweringA64::tempAddrBuffer(IrOp bufferOp, IrOp indexOp, uint8_t tag)
 {
     CODEGEN_ASSERT(tag == LUA_TUSERDATA || tag == LUA_TBUFFER);
-    int dataOffset = tag == LUA_TBUFFER ? offsetof(Buffer, data) : offsetof(Udata, data);
+    int dataOffset = tag == LUA_TBUFFER ? offsetof(Buffer, inline_data) : offsetof(Udata, data);
 
     if (indexOp.kind == IrOpKind::Inst)
     {

@@ -65,6 +65,8 @@ static const char* getTagName(uint8_t tag)
         return "tnumber";
     case LUA_TVECTOR:
         return "tvector";
+    case LUA_TSYMNONE:
+        return "tsymnone";
     case LUA_TSTRING:
         return "tstring";
     case LUA_TTABLE:
@@ -301,6 +303,8 @@ const char* getCmdName(IrCmd cmd)
         return "TABLE_SETNUM";
     case IrCmd::STRING_LEN:
         return "STRING_LEN";
+    case IrCmd::BUFFER_ISFROZEN:
+        return "BUFFER_ISFROZEN";
     case IrCmd::NEW_TABLE:
         return "NEW_TABLE";
     case IrCmd::DUP_TABLE:
@@ -381,6 +385,8 @@ const char* getCmdName(IrCmd cmd)
         return "CHECK_NODE_VALUE";
     case IrCmd::CHECK_BUFFER_LEN:
         return "CHECK_BUFFER_LEN";
+    case IrCmd::CHECK_BUFFER_MUTABLE:
+        return "CHECK_BUFFER_MUTABLE";
     case IrCmd::CHECK_USERDATA_TAG:
         return "CHECK_USERDATA_TAG";
     case IrCmd::CHECK_CMP_NUM:
@@ -806,6 +812,8 @@ const char* getBytecodeTypeName(uint8_t type, const char* const* userdataTypes)
         return "vector";
     case LBC_TYPE_BUFFER:
         return "buffer";
+    case LBC_TYPE_SYMNONE:
+        return "none";
     case LBC_TYPE_ANY:
         return "any";
     }

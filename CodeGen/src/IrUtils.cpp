@@ -277,6 +277,7 @@ IrValueKind getCmdValueKind(IrCmd cmd)
     case IrCmd::TABLE_SETNUM:
         return IrValueKind::Pointer;
     case IrCmd::STRING_LEN:
+    case IrCmd::BUFFER_ISFROZEN:
         return IrValueKind::Int;
     case IrCmd::NEW_TABLE:
     case IrCmd::DUP_TABLE:
@@ -334,6 +335,7 @@ IrValueKind getCmdValueKind(IrCmd cmd)
     case IrCmd::CHECK_NODE_NO_NEXT:
     case IrCmd::CHECK_NODE_VALUE:
     case IrCmd::CHECK_BUFFER_LEN:
+    case IrCmd::CHECK_BUFFER_MUTABLE:
     case IrCmd::CHECK_USERDATA_TAG:
     case IrCmd::CHECK_CMP_NUM:
     case IrCmd::CHECK_CMP_INT:
@@ -1936,6 +1938,8 @@ std::optional<uint8_t> tryGetLuauTagForBcType(uint8_t bcType, bool ignoreOptiona
         return LUA_TVECTOR;
     case LBC_TYPE_BUFFER:
         return LUA_TBUFFER;
+    case LBC_TYPE_SYMNONE:
+        return LUA_TSYMNONE;
     default:
         if (bcType >= LBC_TYPE_TAGGED_USERDATA_BASE && bcType < LBC_TYPE_TAGGED_USERDATA_END)
             return LUA_TUSERDATA;

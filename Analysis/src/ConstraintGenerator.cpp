@@ -50,6 +50,7 @@ LUAU_FASTFLAGVARIABLE(LuauRemovePrimitiveTypeConstraintAndSubtypingUnifier)
 LUAU_FLAGVERSION(LuauRemovePrimitiveTypeConstraintAndSubtypingUnifier, 2)
 LUAU_FASTFLAGVARIABLE(LuauDeprecatedAttributeOnAnonymousFunctions)
 LUAU_FASTFLAGVARIABLE(DebugLuauCFG)
+LUAU_FASTFLAG(LuauDefaultArguments)
 
 namespace Luau
 {
@@ -3517,6 +3518,8 @@ std::tuple<TypeId, TypeId, RefinementId> ConstraintGenerator::checkBinary(
             discriminantTy = builtinTypes->threadType;
         else if (typeguard->type == "buffer")
             discriminantTy = builtinTypes->bufferType;
+        else if (typeguard->type == "none")
+            discriminantTy = builtinTypes->noneType;
         else if (typeguard->type == "table")
             discriminantTy = builtinTypes->tableType;
         else if (typeguard->type == "function")
@@ -3997,19 +4000,46 @@ ConstraintGenerator::FunctionSignature ConstraintGenerator::checkFunctionSignatu
         AstLocal* local = fn->args.data[i];
 
         TypeId argTy = nullptr;
+        bool hasSpecifiedArgTy = false;
         if (local->annotation)
         {
             argTy = resolveType(signatureScope, local->annotation, /* inTypeArguments */ false, /* replaceErrorWithFresh*/ true, Polarity::Negative);
+            hasSpecifiedArgTy = true;
         }
         else
         {
             if (i < expectedArgPack.head.size())
+            {
                 argTy = expectedArgPack.head[i];
-            else
-                argTy = freshType(signatureScope, Polarity::Negative);
+                hasSpecifiedArgTy = true;
+            }
         }
 
-        argTypes.push_back(argTy);
+        if (FFlag::LuauDefaultArguments)
+        {
+            AstExpr* argDefault = fn->argsDefaults.data[i];
+            if (argDefault)
+            {
+                Inference found = check(signatureScope, argDefault, argTy);
+
+                if (hasSpecifiedArgTy)
+                    addConstraint(signatureScope, argDefault->location, SubtypeConstraint{found.ty, argTy});
+                else
+                    argTy = found.ty;
+            }
+
+            if (!argTy)
+                argTy = freshType(signatureScope, Polarity::Negative);
+
+            argTypes.push_back(argDefault ? makeUnion(signatureScope, argDefault->location, builtinTypes->nilType, argTy) : argTy);
+        }
+        else
+        {
+            if (!argTy)
+                argTy = freshType(signatureScope, Polarity::Negative);
+
+            argTypes.push_back(argTy);
+        }
         argNames.emplace_back(FunctionArgument{local->name.value, local->location});
 
         signatureScope->bindings[local] = Binding{argTy, local->location};

@@ -34,6 +34,7 @@ LUAU_FASTFLAGVARIABLE(LuauCstAttr)
 LUAU_FASTFLAGVARIABLE(LuauStoreConstKeywordBegin)
 LUAU_FASTFLAGVARIABLE(LuauNoDuplicateBinaryPrefix)
 LUAU_FASTFLAGVARIABLE(LuauTrackPrefixLocal)
+LUAU_FASTFLAGVARIABLE(LuauDefaultArguments)
 
 // Clip with DebugLuauReportReturnTypeVariadicWithTypeSuffix
 bool luau_telemetry_parsed_return_type_variadic_with_type_suffix = false;
@@ -790,7 +791,7 @@ AstStat* Parser::parseFor()
             {
                 Position initialCommaPosition = lexer.current().location.begin;
                 nextLexeme();
-                parseBindingList(names, false, &varsCommaPosition, &initialCommaPosition);
+                parseBindingList(names, false, false, &varsCommaPosition, &initialCommaPosition);
             }
             else
             {
@@ -1403,9 +1404,9 @@ AstStat* Parser::parseLocal(
         TempVector<Binding> names(scratchBinding);
         AstArray<Position> varsCommaPositions;
         if (options.storeCstData)
-            parseBindingList(names, false, &varsCommaPositions, nullptr, nullptr, isConst);
+            parseBindingList(names, false, false, &varsCommaPositions, nullptr, nullptr, isConst);
         else
-            parseBindingList(names, false, nullptr, nullptr, nullptr, isConst);
+            parseBindingList(names, false, false, nullptr, nullptr, nullptr, isConst);
 
         matchRecoveryStopOnToken['=']--;
 
@@ -1786,7 +1787,7 @@ AstDeclaredExternTypeProperty Parser::parseDeclaredExternTypeMethod(const AstArr
     Location varargLocation;
     AstTypePack* varargAnnotation = nullptr;
     if (lexer.current().type != ')')
-        std::tie(vararg, varargLocation, varargAnnotation) = parseBindingList(args, /* allowDot3 */ true);
+        std::tie(vararg, varargLocation, varargAnnotation) = parseBindingList(args, /* allowDot3 */ true, /* allowDefault= */ false);
 
     expectMatchAndConsume(')', matchParen);
 
@@ -1857,7 +1858,7 @@ AstStat* Parser::parseDeclaration(const Location& start, const AstArray<AstAttr*
         AstTypePack* varargAnnotation = nullptr;
 
         if (lexer.current().type != ')')
-            std::tie(vararg, varargLocation, varargAnnotation) = parseBindingList(args, /* allowDot3= */ true);
+            std::tie(vararg, varargLocation, varargAnnotation) = parseBindingList(args, /* allowDot3= */ true, /* allowDefault= */ false);
 
         expectMatchAndConsume(')', matchParen);
 
@@ -2260,7 +2261,7 @@ AstStat* Parser::parseCompoundAssignment(AstExpr* initial, AstExprBinary::Op op)
     return node;
 }
 
-std::pair<AstLocal*, AstArray<AstLocal*>> Parser::prepareFunctionArguments(const Location& start, bool hasself, const TempVector<Binding>& args)
+std::tuple<AstLocal*, AstArray<AstLocal*>, AstArray<AstExpr*>> Parser::prepareFunctionArguments(const Location& start, bool hasself, const TempVector<Binding>& args)
 {
     AstLocal* self = nullptr;
 
@@ -2268,11 +2269,15 @@ std::pair<AstLocal*, AstArray<AstLocal*>> Parser::prepareFunctionArguments(const
         self = pushLocal(Binding(Name(nameSelf, start), nullptr));
 
     TempVector<AstLocal*> vars(scratchLocal);
+    TempVector<AstExpr*> varsDefaults(scratchExpr);
 
     for (size_t i = 0; i < args.size(); ++i)
+    {
         vars.push_back(pushLocal(args[i]));
+        varsDefaults.push_back(args[i].defaultValue);
+    }
 
-    return {self, copy(vars)};
+    return {self, copy(vars), copy(varsDefaults)};
 }
 
 // funcbody ::= `(' [parlist] `)' [`:' ReturnType] block end
@@ -2330,10 +2335,17 @@ std::pair<AstExprFunction*, AstLocal*> Parser::parseFunctionBody(
     if (lexer.current().type != ')')
     {
         if (cstNode)
-            std::tie(vararg, varargLocation, varargAnnotation) =
-                parseBindingList(args, /* allowDot3= */ true, &cstNode->argsCommaPositions, nullptr, &cstNode->varargAnnotationColonPosition);
+            std::tie(vararg, varargLocation, varargAnnotation) = parseBindingList(
+                args,
+                /* allowDot3= */ true,
+                /* allowDefault= */ FFlag::LuauDefaultArguments,
+                &cstNode->argsCommaPositions,
+                nullptr,
+                &cstNode->varargAnnotationColonPosition
+            );
         else
-            std::tie(vararg, varargLocation, varargAnnotation) = parseBindingList(args, /* allowDot3= */ true);
+            std::tie(vararg, varargLocation, varargAnnotation) =
+                parseBindingList(args, /* allowDot3= */ true, /* allowDefault= */ FFlag::LuauDefaultArguments);
     }
 
     std::optional<Location> argLocation;
@@ -2361,7 +2373,7 @@ std::pair<AstExprFunction*, AstLocal*> Parser::parseFunctionBody(
 
     functionStack.emplace_back(fun);
 
-    auto [self, vars] = prepareFunctionArguments(start, hasself, args);
+    auto [self, vars, varsDefaults] = prepareFunctionArguments(start, hasself, args);
 
     AstStatBlock* body = parseBlock();
 
@@ -2381,6 +2393,7 @@ std::pair<AstExprFunction*, AstLocal*> Parser::parseFunctionBody(
         genericPacks,
         self,
         vars,
+        varsDefaults,
         vararg,
         varargLocation,
         body,
@@ -2421,7 +2434,7 @@ void Parser::parseExprList(TempVector<AstExpr*>& result, TempVector<Position>* c
     }
 }
 
-Parser::Binding Parser::parseBinding(bool isConst)
+Parser::Binding Parser::parseBinding(bool isConst, bool allowDefault)
 {
     std::optional<Name> name = parseNameOpt("variable name");
 
@@ -2432,10 +2445,28 @@ Parser::Binding Parser::parseBinding(bool isConst)
     Position colonPosition = lexer.current().type == ':' ? lexer.current().location.begin : Position::missing();
     AstType* annotation = parseOptionalType();
 
+    AstExpr* defaultValue = nullptr;
+    if (allowDefault && lexer.current().type == '=')
+    {
+        nextLexeme();
+        // The depth of functionStack is used to determine the scoping for a local
+        // The expressions for default arguments need scoped to the function body, not the parent
+        // scope
+        // We can't access the Function for the body, because that gets constructed during a later
+        // parse step. A dummy function is safe to use here, as code only inspects .vararg and ...
+        // is not legal in a default argument expression.
+        static Function dummyFunction;
+        functionStack.emplace_back(dummyFunction);
+
+        defaultValue = parseExpr();
+
+        functionStack.pop_back();
+    }
+
     if (options.storeCstData)
-        return Binding(*name, annotation, colonPosition, isConst);
+        return Binding(*name, annotation, colonPosition, isConst, defaultValue);
     else
-        return Binding(*name, annotation, Position::missing(), isConst);
+        return Binding(*name, annotation, Position::missing(), isConst, defaultValue);
 }
 
 AstArray<Position> Parser::extractAnnotationColonPositions(const TempVector<Binding>& bindings)
@@ -2450,6 +2481,7 @@ AstArray<Position> Parser::extractAnnotationColonPositions(const TempVector<Bind
 LUAU_NOINLINE std::tuple<bool, Location, AstTypePack*> Parser::parseBindingList(
     TempVector<Binding>& result,
     bool allowDot3,
+    bool allowDefault,
     AstArray<Position>* commaPositions,
     Position* initialCommaPosition,
     Position* varargAnnotationColonPosition,
@@ -2484,7 +2516,7 @@ LUAU_NOINLINE std::tuple<bool, Location, AstTypePack*> Parser::parseBindingList(
             return {true, varargLocation, tailAnnotation};
         }
 
-        result.push_back(parseBinding(isConst));
+        result.push_back(parseBinding(isConst, allowDefault));
 
         if (lexer.current().type != ',')
             break;

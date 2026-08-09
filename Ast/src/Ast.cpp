@@ -3,6 +3,7 @@
 
 #include "Luau/Common.h"
 
+LUAU_FASTFLAG(LuauDefaultArguments)
 
 namespace Luau
 {
@@ -307,6 +308,7 @@ AstExprFunction::AstExprFunction(
     const AstArray<AstGenericTypePack*>& genericPacks,
     AstLocal* self,
     const AstArray<AstLocal*>& args,
+    const AstArray<AstExpr*>& argsDefaults,
     bool vararg,
     const Location& varargLocation,
     AstStatBlock* body,
@@ -322,6 +324,7 @@ AstExprFunction::AstExprFunction(
     , genericPacks(genericPacks)
     , self(self)
     , args(args)
+    , argsDefaults(argsDefaults)
     , returnAnnotation(returnAnnotation)
     , vararg(vararg)
     , varargLocation(varargLocation)
@@ -341,6 +344,15 @@ void AstExprFunction::visit(AstVisitor* visitor)
         {
             if (arg->annotation)
                 arg->annotation->visit(visitor);
+        }
+
+        if (FFlag::LuauDefaultArguments)
+        {
+            for (AstExpr* argDefault : argsDefaults)
+            {
+                if (argDefault)
+                    argDefault->visit(visitor);
+            }
         }
 
         if (varargAnnotation)

@@ -537,6 +537,7 @@ enum LuauBytecodeType
     LBC_TYPE_VECTOR,
     LBC_TYPE_BUFFER,
     LBC_TYPE_INTEGER,
+    LBC_TYPE_SYMNONE,
 
     LBC_TYPE_ANY = 15,
 
@@ -734,6 +735,8 @@ enum LuauBuiltinFunction
     // buffer.readinteger / buffer.writeinteger (int64_t)
     LBF_BUFFER_READINTEGER,
     LBF_BUFFER_WRITEINTEGER,
+
+    LBF_BUFFER_ISFROZEN,
 };
 
 // Capture type, used in LOP_CAPTURE

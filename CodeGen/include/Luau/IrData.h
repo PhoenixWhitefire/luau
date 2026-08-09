@@ -460,6 +460,10 @@ enum class IrCmd : uint8_t
     // A: pointer (string)
     STRING_LEN,
 
+    // Check if buffer is frozen
+    // A: pointer (Buffer)
+    BUFFER_ISFROZEN,
+
     // Allocate new table
     // A: unsigned int (array element count)
     // B: unsigned int (node element count)
@@ -690,6 +694,7 @@ enum class IrCmd : uint8_t
     // F: block/vmexit/undef
     // When undef is specified instead of a block, execution is aborted on check failure
     CHECK_BUFFER_LEN,
+    CHECK_BUFFER_MUTABLE,
 
     // Guard against userdata tag mismatch
     // A: pointer (userdata)

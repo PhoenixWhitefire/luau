@@ -16,6 +16,7 @@
 using namespace Luau;
 
 LUAU_FASTFLAG(DebugLuauAssertOnForcedConstraint)
+LUAU_FASTFLAG(LuauTruthyFalsy)
 
 LUAU_FASTFLAG(LuauInstantiateInSubtyping)
 LUAU_FASTFLAG(DebugLuauForceOldSolver)
@@ -25,6 +26,7 @@ LUAU_FASTFLAG(LuauBidirectionalInferenceVariadics)
 LUAU_FASTFLAG(LuauBidirectionalInferenceBetterLambdaHandling)
 LUAU_FASTFLAG(LuauHigherOrderGenericInference)
 LUAU_FASTFLAG(LuauCollapseDirectBoundCycles)
+LUAU_FASTFLAG(LuauDefaultArguments)
 
 TEST_SUITE_BEGIN("TypeInferFunctions");
 
@@ -2896,6 +2898,7 @@ TEST_CASE_FIXTURE(Fixture, "unifier_should_not_bind_free_types")
 {
     ScopedFastFlag sffs[] = {
         {FFlag::LuauRemovePrimitiveTypeConstraintAndSubtypingUnifier, true},
+        {FFlag::LuauTruthyFalsy, true},
     };
 
     CheckResult result = check(R"(
@@ -2930,7 +2933,7 @@ TEST_CASE_FIXTURE(Fixture, "unifier_should_not_bind_free_types")
         auto tm2 = get<TypeMismatch>(result.errors[1]);
         REQUIRE(tm2);
         CHECK(toString(tm2->wantedType) == "string");
-        CHECK(toString(tm2->givenType) == "unknown & ~(false?)");
+        CHECK(toString(tm2->givenType) == "truthy & unknown");
     }
 }
 
@@ -4366,6 +4369,38 @@ TEST_CASE_FIXTURE(BuiltinsFixture, "pass_generic_function_to_pcall")
     LUAU_CHECK_NO_ERRORS(result);
 
     CHECK("number" == toString(requireType("result")));
+}
+
+TEST_CASE_FIXTURE(Fixture, "default_argument_infers_parameter_type")
+{
+    ScopedFastFlag sffs[] = {
+        {FFlag::DebugLuauForceOldSolver, false},
+        {FFlag::LuauDefaultArguments, true},
+    };
+
+    CheckResult result = check(R"(
+        local function foo(bar = 1)
+            return bar
+        end
+    )");
+
+    LUAU_REQUIRE_NO_ERRORS(result);
+    CHECK_EQ("(number?) -> number", toString(requireType("foo")));
+}
+
+TEST_CASE_FIXTURE(Fixture, "default_argument_is_checked_against_parameter_annotation")
+{
+    ScopedFastFlag sffs[] = {
+        {FFlag::DebugLuauForceOldSolver, false},
+        {FFlag::LuauDefaultArguments, true},
+    };
+
+    CheckResult result = check(R"(
+        local function foo(bar: string = 1)
+        end
+    )");
+
+    CHECK(!result.errors.empty());
 }
 
 TEST_SUITE_END();

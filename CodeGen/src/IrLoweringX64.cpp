@@ -1853,6 +1853,15 @@ void IrLoweringX64::lowerInst(IrInst& inst, uint32_t index, const IrBlock& next)
         build.mov(inst.regX64, dword[ptr + offsetof(TString, len)]);
         break;
     }
+    case IrCmd::BUFFER_ISFROZEN:
+    {
+        RegisterX64 ptr = regOp(OP_A(inst));
+        inst.regX64 = regs.allocReg(SizeX64::dword, index);
+        build.xor_(inst.regX64, inst.regX64);
+        build.cmp(byte[ptr + offsetof(Buffer, mode)], LUA_BHOST_IMMUTABLE);
+        build.setcc(ConditionX64::Equal, byteReg(inst.regX64));
+        break;
+    }
     case IrCmd::NEW_TABLE:
     {
         IrCallWrapperX64 callWrap(regs, build, index);
@@ -2376,6 +2385,12 @@ void IrLoweringX64::lowerInst(IrInst& inst, uint32_t index, const IrBlock& next)
     case IrCmd::CHECK_NODE_VALUE:
     {
         build.cmp(dword[regOp(OP_A(inst)) + offsetof(LuaNode, val) + offsetof(TValue, tt)], LUA_TNIL);
+        jumpOrAbortOnUndef(ConditionX64::Equal, OP_B(inst), index, next);
+        break;
+    }
+    case IrCmd::CHECK_BUFFER_MUTABLE:
+    {
+        build.cmp(byte[regOp(OP_A(inst)) + offsetof(Buffer, mode)], LUA_BHOST_IMMUTABLE);
         jumpOrAbortOnUndef(ConditionX64::Equal, OP_B(inst), index, next);
         break;
     }
@@ -4087,7 +4102,7 @@ RegisterX64 IrLoweringX64::regOp(IrOp op)
 OperandX64 IrLoweringX64::bufferAddrOp(IrOp bufferOp, IrOp indexOp, uint8_t tag)
 {
     CODEGEN_ASSERT(tag == LUA_TUSERDATA || tag == LUA_TBUFFER);
-    int dataOffset = tag == LUA_TBUFFER ? offsetof(Buffer, data) : offsetof(Udata, data);
+    int dataOffset = tag == LUA_TBUFFER ? offsetof(Buffer, inline_data) : offsetof(Udata, data);
 
     if (indexOp.kind == IrOpKind::Inst)
     {

@@ -1425,6 +1425,7 @@ static void handleBuiltinEffects(ConstPropState& state, LuauBuiltinFunction bfid
     case LBF_STRING_BYTE:
     case LBF_STRING_CHAR:
     case LBF_STRING_LEN:
+    case LBF_BUFFER_ISFROZEN:
     case LBF_TYPEOF:
     case LBF_STRING_SUB:
     case LBF_MATH_CLAMP:
@@ -2287,6 +2288,8 @@ static void constPropInInst(ConstPropState& state, IrBuilder& build, IrFunction&
             state.inSafeEnv = true;
         }
         break;
+    case IrCmd::CHECK_BUFFER_MUTABLE:
+        break;
     case IrCmd::CHECK_BUFFER_LEN:
     {
         std::optional<int> bufferOffset = function.asIntOp(OP_B(inst).kind == IrOpKind::Constant ? OP_B(inst) : state.tryGetValue(OP_B(inst)));
@@ -2870,6 +2873,7 @@ static void constPropInInst(ConstPropState& state, IrBuilder& build, IrFunction&
         state.invalidateTableArraySize();
         break;
     case IrCmd::STRING_LEN:
+    case IrCmd::BUFFER_ISFROZEN:
         break;
     case IrCmd::NEW_TABLE:
         state.instNotReadonly.insert(index);

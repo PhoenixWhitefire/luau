@@ -790,6 +790,8 @@ static int luauF_type(lua_State* L, StkId res, TValue* arg0, int nresults, StkId
     if (nparams >= 1 && nresults <= 1)
     {
         int tt = ttype(arg0);
+        if (tt == LUA_TSYMNONE)
+            return -1;
         TString* ttname = L->global->ttname[tt];
 
         setsvalue(L, res, ttname);
@@ -1302,6 +1304,12 @@ static int luauF_tostring(lua_State* L, StkId res, TValue* arg0, int nresults, S
             setsvalue(L, res, s);
             return 1;
         }
+        case LUA_TSYMNONE:
+        {
+            TString* s = L->global->ttname[LUA_TSYMNONE];
+            setsvalue(L, res, s);
+            return 1;
+        }
         case LUA_TBOOLEAN:
         {
             TString* s = bvalue(arg0) ? luaS_newliteral(L, "true") : luaS_newliteral(L, "false");
@@ -1386,7 +1394,7 @@ template<typename T>
 static int luauF_writeinteger(lua_State* L, StkId res, TValue* arg0, int nresults, StkId args, int nparams)
 {
 #if !defined(LUAU_BIG_ENDIAN)
-    if (nparams >= 3 && nresults <= 0 && ttisbuffer(arg0) && ttisnumber(args) && ttisnumber(args + 1))
+    if (nparams >= 3 && nresults <= 0 && ttisbuffer(arg0) && ttisnumber(args) && ttisnumber(args + 1) && bufvalue(arg0)->mode != LUA_BHOST_IMMUTABLE)
     {
         int offset;
         luai_num2int(offset, nvalue(args));
@@ -1436,7 +1444,7 @@ template<typename T>
 static int luauF_writefp(lua_State* L, StkId res, TValue* arg0, int nresults, StkId args, int nparams)
 {
 #if !defined(LUAU_BIG_ENDIAN)
-    if (nparams >= 3 && nresults <= 0 && ttisbuffer(arg0) && ttisnumber(args) && ttisnumber(args + 1))
+    if (nparams >= 3 && nresults <= 0 && ttisbuffer(arg0) && ttisnumber(args) && ttisnumber(args + 1) && bufvalue(arg0)->mode != LUA_BHOST_IMMUTABLE)
     {
         int offset;
         luai_num2int(offset, nvalue(args));
@@ -2479,7 +2487,7 @@ static int luauF_bufferreadlong(lua_State* L, StkId res, TValue* arg0, int nresu
 static int luauF_bufferwritelong(lua_State* L, StkId res, TValue* arg0, int nresults, StkId args, int nparams)
 {
 #if !defined(LUAU_BIG_ENDIAN)
-    if (nparams >= 3 && nresults <= 0 && ttisbuffer(arg0) && ttisnumber(args) && ttisinteger(args + 1))
+    if (nparams >= 3 && nresults <= 0 && ttisbuffer(arg0) && ttisnumber(args) && ttisinteger(args + 1) && bufvalue(arg0)->mode != LUA_BHOST_IMMUTABLE)
     {
         int offset;
         luai_num2int(offset, nvalue(args));
@@ -2491,6 +2499,17 @@ static int luauF_bufferwritelong(lua_State* L, StkId res, TValue* arg0, int nres
         return 0;
     }
 #endif
+
+    return -1;
+}
+
+static int luauF_bufferisfrozen(lua_State* L, StkId res, TValue* arg0, int nresults, StkId args, int nparams)
+{
+    if (nparams >= 1 && nresults <= 1 && ttisbuffer(arg0))
+    {
+        setbvalue(res, bufvalue(arg0)->mode == LUA_BHOST_IMMUTABLE);
+        return 1;
+    }
 
     return -1;
 }
@@ -2759,6 +2778,8 @@ const luau_FastFunction luauF_table[256] = {
 
     luauF_bufferreadlong,
     luauF_bufferwritelong,
+
+    luauF_bufferisfrozen,
 
 // When adding builtins, add them above this line; what follows is 64 "dummy" entries with luauF_missing fallback.
 // This is important so that older versions of the runtime that don't support newer builtins automatically fall back via luauF_missing.

@@ -35,6 +35,8 @@ static LuauBytecodeType getPrimitiveType(AstName name)
         return LBC_TYPE_BUFFER;
     else if (name == "vector")
         return LBC_TYPE_VECTOR;
+    else if (name == "none")
+        return LBC_TYPE_SYMNONE;
     else if (name == "any" || name == "unknown")
         return LBC_TYPE_ANY;
     else
@@ -818,6 +820,7 @@ struct TypeMapVisitor : AstVisitor
             case LBF_MATH_ISINF:
             case LBF_MATH_ISFINITE:
             case LBF_RAWEQUAL:
+            case LBF_BUFFER_ISFROZEN:
                 recordResolvedType(node, &builtinTypes.booleanType);
                 break;
 

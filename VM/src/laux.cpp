@@ -156,6 +156,16 @@ void* luaL_checkbuffer(lua_State* L, int narg, size_t* len)
     return b;
 }
 
+void* luaL_checkbuffermutable(lua_State* L, int narg, size_t* len)
+{
+    void* b = lua_tobuffer(L, narg, len);
+    if (!b)
+        tag_error(L, narg, LUA_TBUFFER);
+    if (lua_getbuffermode(L, narg) == LUA_BHOST_IMMUTABLE)
+        luaL_error(L, "buffer is immutable");
+    return b;
+}
+
 void luaL_checkstack(lua_State* L, int space, const char* mes)
 {
     if (!lua_checkstack(L, space))
@@ -595,6 +605,9 @@ void luaL_addvalueany(luaL_Strbuf* B, int idx)
     case LUA_TNIL:
         luaL_addstring(B, "nil");
         break;
+    case LUA_TSYMNONE:
+        luaL_addstring(B, "none");
+        break;
     case LUA_TBOOLEAN:
         if (lua_toboolean(L, idx))
             luaL_addstring(B, "true");
@@ -682,6 +695,9 @@ const char* luaL_tolstring(lua_State* L, int idx, size_t* len)
     {
     case LUA_TNIL:
         lua_pushliteral(L, "nil");
+        break;
+    case LUA_TSYMNONE:
+        lua_pushliteral(L, "none");
         break;
     case LUA_TBOOLEAN:
         lua_pushstring(L, (lua_toboolean(L, idx) ? "true" : "false"));

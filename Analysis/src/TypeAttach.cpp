@@ -108,6 +108,8 @@ public:
             return allocator->alloc<AstTypeReference>(Location(), std::nullopt, AstName("thread"), std::nullopt, Location());
         case PrimitiveType::Buffer:
             return allocator->alloc<AstTypeReference>(Location(), std::nullopt, AstName("buffer"), std::nullopt, Location());
+        case PrimitiveType::NoneType:
+            return allocator->alloc<AstTypeReference>(Location(), std::nullopt, AstName("none"), std::nullopt, Location());
         case PrimitiveType::Function:
             return allocator->alloc<AstTypeReference>(Location(), std::nullopt, AstName("function"), std::nullopt, Location());
         case PrimitiveType::Table:
@@ -439,7 +441,7 @@ public:
     {
         AstArray<AstTypeOrPack> params;
         params.size = 1;
-        params.data = static_cast<AstTypeOrPack*>(allocator->allocate(sizeof(AstType*)));
+        params.data = static_cast<AstTypeOrPack*>(allocator->allocate(sizeof(AstTypeOrPack)));
         params.data[0] = AstTypeOrPack{Luau::visit(*this, ntv.ty->ty), nullptr};
 
         return allocator->alloc<AstTypeReference>(Location(), std::nullopt, AstName("negate"), std::nullopt, Location(), true, params);
