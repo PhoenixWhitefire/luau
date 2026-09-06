@@ -18,15 +18,15 @@
 LUAU_DYNAMIC_FASTINT(LuauSubtypingRecursionLimit)
 
 LUAU_FASTINT(LuauTypeInferRecursionLimit)
-LUAU_FASTFLAG(LuauAutocompleteFunctionArglistSuggestion)
+
 LUAU_FASTFLAG(LuauAutocompleteMetatableInheritance)
-LUAU_FASTFLAG(LuauCheckTypeForDeprecated)
-LUAU_FASTFLAG(LuauDeprecatedAttributeOnAnonymousFunctions)
-LUAU_FASTFLAG(LuauAutocompleteSkipErrorTypeInUnion)
 LUAU_FASTFLAG(LuauCheckTypeForDeprecated)
 LUAU_FASTFLAG(LuauDeprecatedAttributeOnAnonymousFunctions)
 LUAU_FASTFLAG(LuauAutocompleteDotMethodConversion)
 LUAU_FASTFLAG(LuauUseExplicitTypeArgsInGenerics)
+LUAU_FASTFLAG(DebugLuauForceOldSolver)
+LUAU_FASTFLAG(DebugLuauIfLocalSyntax)
+LUAU_FASTFLAG(DebugLuauIfLocalAnalysis)
 
 using namespace Luau;
 
@@ -4641,7 +4641,6 @@ TEST_CASE_FIXTURE(ACFixture, "anonymous_autofilled_cursor_after_function_keyword
     // Cursor is right after the "function" keyword but before any "(" — the arg list has not been
     // opened yet. The suggestion must expand the full "function(...) end" expression, not just the
     // parameter list (which would replace the word "function" with bare argument names).
-    ScopedFastFlag sff{FFlag::LuauAutocompleteFunctionArglistSuggestion, true};
 
     check(R"(
 local function foo(a: (number, string) -> ())
@@ -4662,8 +4661,6 @@ foo(function@1)
 
 TEST_CASE_FIXTURE(ACFixture, "anonymous_autofilled_cursor_in_arglist_empty")
 {
-    ScopedFastFlag sff{FFlag::LuauAutocompleteFunctionArglistSuggestion, true};
-
     check(R"(
 local function foo(a: () -> ())
     a()
@@ -4683,8 +4680,6 @@ foo(function(@1))
 
 TEST_CASE_FIXTURE(ACFixture, "anonymous_autofilled_cursor_in_arglist_args")
 {
-    ScopedFastFlag sff{FFlag::LuauAutocompleteFunctionArglistSuggestion, true};
-
     check(R"(
 local function foo(a: (number, string) -> ())
     a()
@@ -4704,8 +4699,6 @@ foo(function(@1))
 
 TEST_CASE_FIXTURE(ACFixture, "anonymous_autofilled_cursor_in_arglist_with_return")
 {
-    ScopedFastFlag sff{FFlag::LuauAutocompleteFunctionArglistSuggestion, true};
-
     check(R"(
 local function foo(a: (number, string) -> string)
     return a(1, "x")
@@ -4725,8 +4718,6 @@ foo(function(@1))
 
 TEST_CASE_FIXTURE(ACFixture, "anonymous_autofilled_cursor_in_arglist_named_args")
 {
-    ScopedFastFlag sff{FFlag::LuauAutocompleteFunctionArglistSuggestion, true};
-
     check(R"(
 local function foo(a: (foo: number, bar: string) -> ())
     a()
@@ -4746,8 +4737,6 @@ foo(function(@1))
 
 TEST_CASE_FIXTURE(ACFixture, "anonymous_autofilled_cursor_in_arglist_varargs")
 {
-    ScopedFastFlag sff{FFlag::LuauAutocompleteFunctionArglistSuggestion, true};
-
     check(R"(
 local function foo(a: (...number) -> ())
     a()
@@ -5514,7 +5503,7 @@ TEST_CASE_FIXTURE(ACFixture, "we_know_the_fields_of_a_class_instance")
             public y: number
         end
 
-        local p = Point2d { x=3, y=4 }
+        local p = Point2d.new { x=3, y=4 }
 
         local q = p.@1
     )");
@@ -5854,8 +5843,6 @@ TEST_CASE_FIXTURE(ACFixture, "class_autocomplete_classname_inside_method")
 
 TEST_CASE_FIXTURE(ACFixture, "autocomplete_on_nonexistent_table")
 {
-    ScopedFastFlag _{FFlag::LuauAutocompleteSkipErrorTypeInUnion, true};
-
     check(R"(
         local mygame = {}
 
@@ -5892,6 +5879,58 @@ ModuleTable:GenericFunctionInsideATable<<string>>(@1)
     CHECK(ac.entryMap.count("myString"));
     CHECK(ac.entryMap["myString"].typeCorrect == TypeCorrectKind::Correct);
     CHECK(ac.entryMap["myNumber"].typeCorrect == TypeCorrectKind::None);
+}
+
+TEST_CASE_FIXTURE(ACFixture, "autocomplete_deprecated_on_recursive_intersection")
+{
+    std::ignore = check(R"(
+        export type T = {
+            prop: number
+        }
+        local function make(): MakeT
+            return nil :: any
+        end
+
+        type MakeT = typeof(make()) & T
+
+        local var: MakeT = nil :: any
+
+        @1
+    )");
+
+    auto ac = autocomplete('1');
+    CHECK(ac.entryMap.count("var"));
+}
+
+TEST_CASE_FIXTURE(ACFixture, "if_local_binding_is_in_scope_in_then_body")
+{
+    ScopedFastFlag sffs[] = {{FFlag::DebugLuauForceOldSolver, false}, {FFlag::DebugLuauIfLocalSyntax, true}, {FFlag::DebugLuauIfLocalAnalysis, true}};
+
+    check(R"(
+        local t = {}
+        if local x = t then
+            @1
+        end
+    )");
+
+    auto ac = autocomplete('1');
+    CHECK(ac.entryMap.count("x"));
+}
+
+TEST_CASE_FIXTURE(ACFixture, "if_local_binding_offers_member_completion")
+{
+    ScopedFastFlag sffs[] = {{FFlag::DebugLuauForceOldSolver, false}, {FFlag::DebugLuauIfLocalSyntax, true}, {FFlag::DebugLuauIfLocalAnalysis, true}};
+
+    check(R"(
+        local t = {foo = 1, bar = 2}
+        if local x = t then
+            x.@1
+        end
+    )");
+
+    auto ac = autocomplete('1');
+    CHECK(ac.entryMap.count("foo"));
+    CHECK(ac.entryMap.count("bar"));
 }
 
 TEST_SUITE_END();
