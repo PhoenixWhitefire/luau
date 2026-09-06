@@ -13,7 +13,7 @@ Udata* luaU_newudata(lua_State* L, size_t s, int tag)
 {
     if (s > MAXUSIZE)
         luaM_toobig(L, "userdata too big", MAXUSIZE);
-    Udata* u = luaM_newgco(L, Udata, sizeudata(s), L->activememcat);
+    Udata* u = luaM_newgcoudata(L, Udata, sizeudata(s), L->activememcat, LUA_TUSERDATA, tag);
     luaC_init(L, u, LUA_TUSERDATA);
     u->len = int(s);
     u->metatable = NULL;

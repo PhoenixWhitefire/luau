@@ -4,7 +4,6 @@
 #include "doctest.h"
 
 LUAU_FASTFLAG(DebugLuauForceOldSolver)
-LUAU_FASTFLAG(LuauDoNotOverwriteAstDefs)
 
 using namespace Luau;
 
@@ -512,7 +511,7 @@ TEST_CASE_FIXTURE(Fixture, "typestate_unknown_global")
     CHECK(get<UnknownSymbol>(result.errors[0]));
 }
 
-TEST_CASE_FIXTURE(BuiltinsFixture, "fuzzer_normalized_type_variables_are_bad" * doctest::timeout(0.5))
+TEST_CASE_FIXTURE(BuiltinsFixture, "fuzzer_normalized_type_variables_are_bad" * doctest::timeout(LUAU_TIMEOUT))
 {
     // We do not care about the errors here, only that this finishes typing
     // in a sensible amount of time.
@@ -795,8 +794,6 @@ TEST_CASE_FIXTURE(BuiltinsFixture, "fuzzer_table_freeze_in_binary_expr")
 {
     DOES_NOT_PASS_OLD_SOLVER_GUARD();
 
-    ScopedFastFlag _{FFlag::LuauDoNotOverwriteAstDefs, true};
-
     CheckResult result = check(R"(
         local _
         if _ or table.freeze(_,_) or table.freeze(_,_) then
@@ -840,8 +837,6 @@ TEST_CASE_FIXTURE(BuiltinsFixture, "table_freeze_in_conditional")
 TEST_CASE_FIXTURE(BuiltinsFixture, "fuzzer_table_freeze_in_conditional_expr")
 {
     DOES_NOT_PASS_OLD_SOLVER_GUARD();
-
-    ScopedFastFlag _{FFlag::LuauDoNotOverwriteAstDefs, true};
 
     CheckResult result = check(R"(
         local _

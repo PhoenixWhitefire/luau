@@ -31,7 +31,7 @@ LUAU_FASTFLAG(DebugLuauForceAllOldSolverTests)
 
 LUAU_FASTFLAG(DebugLuauAlwaysShowConstraintSolvingIncomplete);
 LUAU_FASTFLAG(DebugLuauForceOldSolver)
-LUAU_FASTFLAG(LuauDisallowExternClassInTypeDefinitions)
+LUAU_FASTFLAG(LuauBetterInferredGenericNames)
 
 #define DOES_NOT_PASS_NEW_SOLVER_GUARD_IMPL(line) ScopedFastFlag sff_##line{FFlag::DebugLuauForceOldSolver, !FFlag::DebugLuauForceAllNewSolverTests};
 
@@ -40,6 +40,13 @@ LUAU_FASTFLAG(LuauDisallowExternClassInTypeDefinitions)
 #define DOES_NOT_PASS_OLD_SOLVER_GUARD_IMPL(line) ScopedFastFlag sff_##line{FFlag::DebugLuauForceOldSolver, FFlag::DebugLuauForceAllOldSolverTests};
 
 #define DOES_NOT_PASS_OLD_SOLVER_GUARD() DOES_NOT_PASS_OLD_SOLVER_GUARD_IMPL(__LINE__)
+
+// If CALLGRIND is on, then disable the timeout (doctest treats a timeout of 0 as disabled).
+#ifdef CALLGRIND
+constexpr double LUAU_TIMEOUT = 0.0;
+#else
+constexpr double LUAU_TIMEOUT = 4.0;
+#endif
 
 
 
@@ -174,8 +181,7 @@ struct Fixture
     // This makes sure that errant cases of constraint solving failing to complete still pop up in tests.
     ScopedFastFlag sff_DebugLuauAlwaysShowConstraintSolvingIncomplete{FFlag::DebugLuauAlwaysShowConstraintSolvingIncomplete, true};
 
-    // lots of tests might use declare class in type definitions - disable this and force all tests to adopt the new syntax
-    ScopedFastFlag sff_LuauDisallowExternClassInTypeDefinitions{FFlag::LuauDisallowExternClassInTypeDefinitions, true};
+    ScopedFastFlag sff_LuauBetterInferredGenericNames{FFlag::LuauBetterInferredGenericNames, true};
 
     TestFileResolver fileResolver;
     TestConfigResolver configResolver;

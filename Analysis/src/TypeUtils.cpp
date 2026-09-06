@@ -200,13 +200,7 @@ std::pair<size_t, std::optional<size_t>> getParameterExtents(const TxnLog* log, 
         return {minCount, minCount + optionalCount};
 }
 
-TypePack extendTypePack(
-    TypeArena& arena,
-    NotNull<BuiltinTypes> builtinTypes,
-    TypePackId pack,
-    size_t length,
-    std::vector<std::optional<TypeId>> overrides
-)
+TypePack extendTypePack(TypeArena& arena, NotNull<BuiltinTypes> builtinTypes, TypePackId pack, size_t length)
 {
     TypePack result;
 
@@ -272,24 +266,15 @@ TypePack extendTypePack(
             trackInteriorFreeTypePack(ftp->scope, *newPack.tail);
 
             result.tail = newPack.tail;
-            size_t overridesIndex = 0;
             while (result.head.size() < length)
             {
                 TypeId t;
-                if (overridesIndex < overrides.size() && overrides[overridesIndex])
-                {
-                    t = *overrides[overridesIndex];
-                }
-                else
-                {
-                    FreeType ft{ftp->scope, builtinTypes->neverType, builtinTypes->unknownType, ftp->polarity};
-                    t = arena.addType(ft);
-                    trackInteriorFreeType(ftp->scope, t);
-                }
+                FreeType ft{ftp->scope, builtinTypes->neverType, builtinTypes->unknownType, ftp->polarity};
+                t = arena.addType(ft);
+                trackInteriorFreeType(ftp->scope, t);
 
                 newPack.head.push_back(t);
                 result.head.push_back(newPack.head.back());
-                overridesIndex++;
             }
 
             asMutable(pack)->ty.emplace<TypePack>(std::move(newPack));
@@ -961,42 +946,6 @@ TypeId addUnion(NotNull<TypeArena> arena, NotNull<BuiltinTypes> builtinTypes, st
     return ub.build();
 }
 
-ContainsAnyGeneric_DEPRECATED::ContainsAnyGeneric_DEPRECATED()
-    : TypeOnceVisitor("ContainsAnyGeneric", /* skipBoundTypes */ true)
-{
-}
-
-bool ContainsAnyGeneric_DEPRECATED::visit(TypeId ty, const ExternType&)
-{
-    return false;
-}
-
-bool ContainsAnyGeneric_DEPRECATED::visit(TypeId ty)
-{
-    found = found || is<GenericType>(ty);
-    return !found;
-}
-
-bool ContainsAnyGeneric_DEPRECATED::visit(TypePackId ty)
-{
-    found = found || is<GenericTypePack>(follow(ty));
-    return !found;
-}
-
-bool ContainsAnyGeneric_DEPRECATED::hasAnyGeneric(TypeId ty)
-{
-    ContainsAnyGeneric_DEPRECATED cg;
-    cg.traverse(ty);
-    return cg.found;
-}
-
-bool ContainsAnyGeneric_DEPRECATED::hasAnyGeneric(TypePackId tp)
-{
-    ContainsAnyGeneric_DEPRECATED cg;
-    cg.traverse(tp);
-    return cg.found;
-}
-
 struct ContainsGenerics : public IterativeTypeVisitor
 {
     NotNull<DenseHashSet<const void*>> generics;
@@ -1075,7 +1024,7 @@ std::optional<TypePackId> getApproximateReturnTypeForFunctionCall(TypeId ty, Den
 
 std::optional<TypePackId> getApproximateReturnTypeForFunctionCall(TypeId ty)
 {
-    DenseHashSet<TypeId> seen{nullptr};
+    DenseHashSet<TypeId> seen;
     return getApproximateReturnTypeForFunctionCall(ty, seen);
 }
 
