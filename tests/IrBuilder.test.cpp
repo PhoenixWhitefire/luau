@@ -19,9 +19,8 @@ LUAU_FASTFLAG(LuauIntegerType2)
 LUAU_FASTFLAG(LuauCodegenSkipDeadPredecessorTags)
 LUAU_FASTFLAG(LuauIntegerLibrary)
 LUAU_FASTFLAG(LuauCodegenSubstituteReplacements)
-LUAU_FASTFLAG(LuauCodegenLinearNoCall)
-LUAU_FASTFLAG(LuauCodegenOriginVerifyMatch)
 LUAU_FASTFLAG(LuauCodegenPropagateFallbackTags)
+LUAU_FASTFLAG(LuauCodegenNoLinearFastpcall)
 
 using namespace Luau::CodeGen;
 
@@ -4588,8 +4587,6 @@ bb_1:
 
 TEST_CASE_FIXTURE(IrBuilderFixture, "NoLinearExtractionForBlockWithCall")
 {
-    ScopedFastFlag luauCodegenLinearNoCall{FFlag::LuauCodegenLinearNoCall, true};
-
     IrOp block1 = build.block(IrBlockKind::Internal);
     IrOp fallback1 = build.fallbackBlock(0u);
     IrOp block2 = build.block(IrBlockKind::Internal);
@@ -4666,8 +4663,6 @@ bb_6:
 
 TEST_CASE_FIXTURE(IrBuilderFixture, "NoLinearExtractionForChainWithCall")
 {
-    ScopedFastFlag luauCodegenLinearNoCall{FFlag::LuauCodegenLinearNoCall, true};
-
     IrOp block1 = build.block(IrBlockKind::Internal);
     IrOp fallback1 = build.fallbackBlock(0u);
     IrOp block2 = build.block(IrBlockKind::Internal);
@@ -4742,10 +4737,86 @@ bb_6:
 )");
 }
 
+TEST_CASE_FIXTURE(IrBuilderFixture, "NoLinearExtractionForChainWithPcall")
+{
+    ScopedFastFlag luauCodegenNoLinearFastpcall{FFlag::LuauCodegenNoLinearFastpcall, true};
+
+    IrOp block1 = build.block(IrBlockKind::Internal);
+    IrOp fallback1 = build.fallbackBlock(0u);
+    IrOp block2 = build.block(IrBlockKind::Internal);
+    IrOp fallback2 = build.fallbackBlock(0u);
+    IrOp block3 = build.block(IrBlockKind::Internal);
+    IrOp block4 = build.block(IrBlockKind::Internal);
+    IrOp block5 = build.block(IrBlockKind::Internal);
+
+    build.beginBlock(block1);
+    IrOp tag1 = build.inst(IrCmd::LOAD_TAG, build.vmReg(2));
+    build.inst(IrCmd::CHECK_TAG, tag1, build.constTag(tnumber), fallback1);
+    build.inst(IrCmd::JUMP, block2);
+
+    build.beginBlock(fallback1);
+    build.inst(IrCmd::DO_LEN, build.vmReg(1), build.vmReg(2));
+    build.inst(IrCmd::JUMP, block2);
+
+    build.beginBlock(block2);
+    IrOp tag2 = build.inst(IrCmd::LOAD_TAG, build.vmReg(2));
+    build.inst(IrCmd::CHECK_TAG, tag2, build.constTag(tnumber), fallback2);
+    build.inst(IrCmd::JUMP, block3);
+
+    build.beginBlock(fallback2);
+    build.inst(IrCmd::DO_LEN, build.vmReg(0), build.vmReg(2));
+    build.inst(IrCmd::JUMP, block3);
+
+    build.beginBlock(block3);
+    build.inst(IrCmd::INVOKE_FASTPCALL, build.vmReg(0), build.constInt(0), build.constInt(1), build.constInt(1));
+    build.inst(IrCmd::JUMP, block4);
+
+    build.beginBlock(block4);
+    build.inst(IrCmd::JUMP, block5);
+
+    build.beginBlock(block5);
+    build.inst(IrCmd::RETURN, build.vmReg(0), build.constInt(0));
+
+    updateUseCounts(build.function);
+    constPropInBlockChains(build);
+    createLinearBlocks(build);
+
+    CHECK("\n" + toString(build.function, IncludeUseInfo::No) == R"(
+bb_0:
+   %0 = LOAD_TAG R2
+   CHECK_TAG %0, tnumber, bb_fallback_1
+   JUMP bb_2
+
+bb_fallback_1:
+   DO_LEN R1, R2
+   JUMP bb_2
+
+bb_2:
+   %5 = LOAD_TAG R2
+   CHECK_TAG %5, tnumber, bb_fallback_3
+   JUMP bb_4
+
+bb_fallback_3:
+   DO_LEN R0, R2
+   JUMP bb_4
+
+bb_4:
+   INVOKE_FASTPCALL R0, 0i, 1i, 1i
+   JUMP bb_5
+; glued to: bb_5
+
+bb_5:
+   JUMP bb_6
+; glued to: bb_6
+
+bb_6:
+   RETURN R0, 0i
+
+)");
+}
+
 TEST_CASE_FIXTURE(IrBuilderFixture, "NoLinearExtractionForChainWithCallLiveOut")
 {
-    ScopedFastFlag luauCodegenLinearNoCall{FFlag::LuauCodegenLinearNoCall, true};
-
     IrOp blockStart = build.block(IrBlockKind::Internal);
     IrOp fallbackStart = build.fallbackBlock(0u);
     IrOp target1 = build.block(IrBlockKind::Internal);
@@ -8714,8 +8785,6 @@ bb_0:
 }
 TEST_CASE_FIXTURE(IrBuilderFixture, "LoadOriginNoRedirectAfterCapturedMutation")
 {
-    ScopedFastFlag luauCodegenOriginVerifyMatch{FFlag::LuauCodegenOriginVerifyMatch, true};
-
     IrOp entry = build.block(IrBlockKind::Internal);
 
     build.beginBlock(entry);
