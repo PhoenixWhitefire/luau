@@ -27,6 +27,9 @@ LUAU_FASTFLAG(LuauBidirectionalInferenceBetterLambdaHandling)
 LUAU_FASTFLAG(LuauHigherOrderGenericInference)
 LUAU_FASTFLAG(LuauCallErrorReportingRecoversArgumentLocationsForPacks)
 LUAU_FASTFLAG(LuauRefactorStringSemanticSubtyping)
+LUAU_FASTFLAG(LuauDoNotLeakGenericsInIndexer)
+LUAU_FASTFLAG(LuauThreadGeneralizeThroughConstraintGeneration)
+LUAU_FASTFLAG(LuauFixCallMetamethodErrorReporting)
 
 TEST_SUITE_BEGIN("TypeInferFunctions");
 
@@ -1432,10 +1435,9 @@ TEST_CASE_FIXTURE(BuiltinsFixture, "infer_generic_lib_function_function_argument
         {FFlag::LuauRemovePrimitiveTypeConstraintAndSubtypingUnifier, true},
     };
 
-
     CheckResult result = check(R"(
-local a = {{x=4}, {x=7}, {x=1}}
-table.sort(a, function(x, y) return x.x < y.x end)
+        local a = {{x=4}, {x=7}, {x=1}}
+        table.sort(a, function(x, y) return x.x < y.x end)
     )");
 
     // FIXME CLI-161355: We *should* be able to bidirectionally push the type
@@ -2380,6 +2382,8 @@ TEST_CASE_FIXTURE(BuiltinsFixture, "attempt_to_call_an_intersection_of_tables_wi
 
 TEST_CASE_FIXTURE(BuiltinsFixture, "call_metamethod_checks_argument_types")
 {
+    ScopedFastFlag _{FFlag::LuauFixCallMetamethodErrorReporting, true};
+
     CheckResult result = check(R"(
         type Callable = typeof(setmetatable({}, {} :: { __call: (Callable, number) -> string }))
         local f = (nil :: any) :: Callable
@@ -2394,6 +2398,8 @@ TEST_CASE_FIXTURE(BuiltinsFixture, "call_metamethod_checks_argument_types")
 
 TEST_CASE_FIXTURE(BuiltinsFixture, "call_metamethod_checks_variadic_argument_types")
 {
+    ScopedFastFlag _{FFlag::LuauFixCallMetamethodErrorReporting, true};
+
     CheckResult result = check(R"(
         type Callable = typeof(setmetatable({}, {} :: { __call: (Callable, ...number) -> () }))
         local f = (nil :: any) :: Callable
@@ -2409,6 +2415,8 @@ TEST_CASE_FIXTURE(BuiltinsFixture, "call_metamethod_checks_variadic_argument_typ
 // the superPath. Without that, the error lands on the last argument rather than the bad one.
 TEST_CASE_FIXTURE(BuiltinsFixture, "call_metamethod_variadic_blames_the_offending_argument")
 {
+    ScopedFastFlag _{FFlag::LuauFixCallMetamethodErrorReporting, true};
+
     CheckResult result = check(R"(
         type Callable = typeof(setmetatable({}, {} :: { __call: (Callable, ...number) -> () }))
         local f = (nil :: any) :: Callable
@@ -2425,6 +2433,8 @@ TEST_CASE_FIXTURE(BuiltinsFixture, "call_metamethod_variadic_blames_the_offendin
 
 TEST_CASE_FIXTURE(BuiltinsFixture, "call_metamethod_variadic_blames_each_offending_argument")
 {
+    ScopedFastFlag _{FFlag::LuauFixCallMetamethodErrorReporting, true};
+
     CheckResult result = check(R"(
         type Callable = typeof(setmetatable({}, {} :: { __call: (Callable, ...number) -> () }))
         local f = (nil :: any) :: Callable
@@ -4484,6 +4494,183 @@ TEST_CASE_FIXTURE(BuiltinsFixture, "oss_2623_double_negate_string")
 
         local node: Foo = { tag = "str" }
     )"));
+}
+
+TEST_CASE_FIXTURE(Fixture, "oss_2670_generic_leaking_indexer_1")
+{
+    DOES_NOT_PASS_OLD_SOLVER_GUARD();
+
+    ScopedFastFlag _{FFlag::LuauDoNotLeakGenericsInIndexer, true};
+
+    LUAU_REQUIRE_NO_ERRORS(check(R"(
+        local function setDefault<K, V>(t: { [K]: V? }): V
+            return nil :: any
+        end
+
+        local t = {hello = "world"}
+        setDefault(t, "green", "42")
+
+        local x = t["h"]
+
+    )"));
+
+    CHECK_EQ("{ [unknown]: unknown?, hello: string }", toString(requireType("t"), {true}));
+    // TODO CLI-181248: This seems incorrect.
+    CHECK_EQ("any", toString(requireType("x"), {true}));
+}
+
+TEST_CASE_FIXTURE(BuiltinsFixture, "oss_2670_generic_leaking_indexer_2")
+{
+    DOES_NOT_PASS_OLD_SOLVER_GUARD();
+
+    ScopedFastFlag _{FFlag::LuauDoNotLeakGenericsInIndexer, true};
+
+    LUAU_REQUIRE_NO_ERRORS(check(R"(
+        local set: <K, V>({ [K | number]: V | string }) -> V
+
+        local t = {hello = "world"}
+        set(t)
+
+        local k, v = next(t)
+
+    )"));
+
+    // TODO CLI-181248: This also seems not entirely correct.
+    CHECK_EQ("number?", toString(requireType("k"), {true}));
+    CHECK_EQ("string", toString(requireType("v"), {true}));
+}
+
+TEST_CASE_FIXTURE(Fixture, "bidirectional_inference_callback_in_array")
+{
+    CheckResult result = check(R"(
+        type Callback = (string) -> ()
+        
+        local t: { Callback } = {
+            function (s)
+                s.uper("hello")
+            end
+        }
+    )");
+
+    LUAU_REQUIRE_ERROR_COUNT(1, result);
+    LUAU_REQUIRE_ERROR(result, UnknownProperty);
+}
+
+
+TEST_CASE_FIXTURE(BuiltinsFixture, "let_generalization_direct")
+{
+    DOES_NOT_PASS_OLD_SOLVER_GUARD();
+
+    ScopedFastFlag _{FFlag::LuauThreadGeneralizeThroughConstraintGeneration, true};
+
+    LUAU_REQUIRE_NO_ERRORS(check(R"(
+        local Func = function(x, y)
+            return x * y
+        end
+        local result1 = Func(42, 13)
+        local result2 = Func(42, vector.create(1, 2, 3))
+    )"));
+
+    CHECK_EQ("number", toString(requireType("result1"), {true}));
+    CHECK_EQ("vector", toString(requireType("result2"), {true}));
+}
+
+TEST_CASE_FIXTURE(BuiltinsFixture, "let_generalization_direct_one_level")
+{
+    DOES_NOT_PASS_OLD_SOLVER_GUARD();
+
+    ScopedFastFlag _{FFlag::LuauThreadGeneralizeThroughConstraintGeneration, true};
+
+    LUAU_REQUIRE_NO_ERRORS(check(R"(
+        local tbl = {
+            Func = function(x, y)
+                return x * y
+            end
+        }
+        local result1 = tbl.Func(42, 13)
+        local result2 = tbl.Func(42, vector.create(1, 2, 3))
+    )"));
+
+    CHECK_EQ("number", toString(requireType("result1"), {true}));
+    CHECK_EQ("vector", toString(requireType("result2"), {true}));
+}
+
+TEST_CASE_FIXTURE(Fixture, "let_generalization_return_not_generalized")
+{
+    ScopedFastFlag _{FFlag::LuauThreadGeneralizeThroughConstraintGeneration, true};
+
+    CheckResult result = check(R"(
+        local function f()
+            return function(x) return x end
+        end
+        local g = f()
+        local r1 = g(42)
+        local r2 = g("hello")
+    )");
+
+    LUAU_REQUIRE_NO_ERRORS(result);
+    CHECK_EQ("number", toString(requireType("r1"), {true}));
+    CHECK_EQ("string", toString(requireType("r2"), {true}));
+}
+
+TEST_CASE_FIXTURE(Fixture, "let_generalization_forin_iterator")
+{
+    DOES_NOT_PASS_OLD_SOLVER_GUARD();
+
+    ScopedFastFlag _{FFlag::LuauThreadGeneralizeThroughConstraintGeneration, true};
+
+    CheckResult result = check(R"(
+        local function makeIter(arr)
+            local i = 0
+            return function()
+                i = i + 1
+                return arr[i]
+            end
+        end
+        local nums = makeIter({1, 2, 3})
+        local strs = makeIter({"a", "b", "c"})
+    )");
+
+    LUAU_REQUIRE_NO_ERRORS(result);
+    CHECK_EQ("(...any) -> number", toString(requireType("nums"), {true}));
+    CHECK_EQ("(...any) -> string", toString(requireType("strs"), {true}));
+}
+
+TEST_CASE_FIXTURE(BuiltinsFixture, "let_generalization_assign_statement")
+{
+    DOES_NOT_PASS_OLD_SOLVER_GUARD();
+
+    ScopedFastFlag _{FFlag::LuauThreadGeneralizeThroughConstraintGeneration, true};
+
+    LUAU_REQUIRE_NO_ERRORS(check(R"(
+        local Func
+        Func = function(x, y)
+            return x * y
+        end
+        local result1 = Func(42, 13)
+        local result2 = Func(42, vector.create(1, 2, 3))
+    )"));
+
+    CHECK_EQ("number", toString(requireType("result1"), {true}));
+    CHECK_EQ("vector", toString(requireType("result2"), {true}));
+}
+
+TEST_CASE_FIXTURE(Fixture, "let_generalization_multiple_values")
+{
+    ScopedFastFlag _{FFlag::LuauThreadGeneralizeThroughConstraintGeneration, true};
+
+    LUAU_REQUIRE_NO_ERRORS(check(R"(
+        local a, b = function(x) return x end, function(y) return y end
+        local r1 = a(42)
+        local r2 = a("hello")
+        local r3 = b(3.14)
+        local r4 = b("world")
+    )"));
+
+    CHECK_EQ("number", toString(requireType("r1"), {true}));
+    CHECK_EQ("string", toString(requireType("r2"), {true}));
+    CHECK_EQ("number", toString(requireType("r3"), {true}));
+    CHECK_EQ("string", toString(requireType("r4"), {true}));
 }
 
 TEST_SUITE_END();
