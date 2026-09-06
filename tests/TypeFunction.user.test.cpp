@@ -23,6 +23,7 @@ LUAU_FASTFLAG(LuauCloneTypeFunctionFromForeignArena)
 LUAU_FASTFLAG(LuauUdtfCreateSingletonFixErrorMessage)
 LUAU_FASTFLAG(LuauUdtfTypeToStringMetamethod)
 LUAU_FASTFLAG(LuauNewTypePathErrorMessages)
+LUAU_FASTFLAG(LuauUdtfFixTypeNameTypo)
 
 TEST_SUITE_BEGIN("UserDefinedTypeFunctionTests");
 
@@ -3263,6 +3264,60 @@ TEST_CASE_FIXTURE(BuiltinsFixture, "udtf_cloner_missing_integer_crashes_copy")
     LUAU_REQUIRE_NO_ERRORS(result);
 }
 
+TEST_CASE_FIXTURE(BuiltinsFixture, "udtf_integer_methods_work")
+{
+    ScopedFastFlag newSolver{FFlag::DebugLuauForceOldSolver, false};
+    ScopedFastFlag integerType{FFlag::LuauIntegerType2, true};
+
+    CheckResult result = check(R"(
+        type function getinteger()
+            local ty = types.integer
+            if ty:is("integer") then
+                return ty
+            end
+            -- this should never be returned
+            return types.string
+        end
+        local function ok(idx: getinteger<>): integer return idx end
+    )");
+
+    LUAU_REQUIRE_NO_ERRORS(result);
+}
+
+TEST_CASE_FIXTURE(BuiltinsFixture, "udtf_integer_is_distinct_from_number")
+{
+    ScopedFastFlag newSolver{FFlag::DebugLuauForceOldSolver, false};
+    ScopedFastFlag integerType{FFlag::LuauIntegerType2, true};
+
+    CheckResult result = check(R"(
+        type function pick(arg)
+            if arg:is("integer") then
+                return types.integer
+            end
+            return types.number
+        end
+        local function ok(idx: pick<integer>): integer return idx end
+        local function ok2(idx: pick<number>): number return idx end
+    )");
+
+    LUAU_REQUIRE_NO_ERRORS(result);
+}
+
+TEST_CASE_FIXTURE(BuiltinsFixture, "udtf_integer_constructor_is_not_number")
+{
+    ScopedFastFlag newSolver{FFlag::DebugLuauForceOldSolver, false};
+    ScopedFastFlag integerType{FFlag::LuauIntegerType2, true};
+
+    CheckResult result = check(R"(
+        type function getinteger()
+            return types.integer
+        end
+        local function bad(idx: getinteger<>): number return idx end
+    )");
+
+    LUAU_REQUIRE_ERROR_COUNT(1, result);
+}
+
 TEST_CASE_FIXTURE(BuiltinsFixture, "udtf_setgenerics_wrong_argcount_check")
 {
     ScopedFastFlag newSolver{FFlag::DebugLuauForceOldSolver, false};
@@ -3626,6 +3681,24 @@ TEST_CASE_FIXTURE(BuiltinsFixture, "cross_type_function_type_check")
 
     LUAU_REQUIRE_ERROR_COUNT(1, result);
     CHECK(toString(result.errors[0]).find("Expected this to be 'number', but got") == 0);
+}
+
+TEST_CASE_FIXTURE(BuiltinsFixture, "non_string_error_value")
+{
+    DOES_NOT_PASS_OLD_SOLVER_GUARD();
+    ScopedFastFlag structuredErrors(FFlag::LuauTypeFunctionStructuredErrors, true);
+    ScopedFastFlag fixTypeNameTypo{FFlag::LuauUdtfFixTypeNameTypo, true};
+
+    CheckResult result = check(R"(
+        type function foo()
+            error({})
+        end
+
+        local x: foo<> = 5
+    )");
+
+    LUAU_REQUIRE_ERROR_COUNT(2, result);
+    CHECK_EQ(toString(result.errors[0]), "'foo' type function errored at runtime: raised an error of type table");
 }
 
 TEST_SUITE_END();
