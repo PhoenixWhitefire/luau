@@ -432,7 +432,7 @@ std::string getBuiltinDefinitionSource(SolverMode solver)
     result += kBuiltinDefinitionMathSrc;
     result += kBuiltinDefinitionOsSrc;
     result += kBuiltinDefinitionCoroutineSrc;
-    result += Solver == SolverMode::New && FFlag::LuauNewSolverNewDefinitions ? kBuiltinDefinitionTableSrc : kBuiltinDefinitionTableSrc_OldSolver;
+    result += solver == SolverMode::New && FFlag::LuauNewSolverNewDefinitions ? kBuiltinDefinitionTableSrc : kBuiltinDefinitionTableSrc_OldSolver;
     result += kBuiltinDefinitionDebugSrc;
     result += kBuiltinDefinitionUtf8Src;
     if (FFlag::LuauIntegerType2 && FFlag::LuauIntegerLibrary)
