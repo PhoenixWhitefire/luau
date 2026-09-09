@@ -424,7 +424,7 @@ declare class: {
 }
 )CLASS_SRC";
 
-std::string getBuiltinDefinitionSource(SolverMode Solver)
+std::string getBuiltinDefinitionSource(SolverMode solver)
 {
     std::string result = kBuiltinDefinitionBaseSrc;
 
